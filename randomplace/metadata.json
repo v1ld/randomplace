@@ -7,10 +7,10 @@
         "Icon": "preferences-system-windows-placement",
         "Authors": [
             {
-                "Name": "v1ld.git@gmail.com + Claude Opus 5.5"
+                "Name": "v1ld.git@gmail.com - Claude Opus 5.5"
             }
         ],
-        "Version": "1.4",
+        "Version": "1.4.1",
         "License": "MIT",
         "EnabledByDefault": false
     },

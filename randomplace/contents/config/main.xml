@@ -121,6 +121,11 @@
       <max>2000</max>
     </entry>
 
+    <entry name="keepDialogsWithParent" type="Bool">
+      <label>Keep dialogs over their parent window</label>
+      <default>true</default>
+    </entry>
+
     <!-- Advanced -->
     <entry name="excludeClasses" type="String">
       <label>Window classes never moved</label>

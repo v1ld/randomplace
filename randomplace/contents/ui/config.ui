@@ -106,6 +106,12 @@
          <property name="value"><number>300</number></property>
         </widget>
        </item>
+       <item row="7" column="0" colspan="2">
+        <widget class="QCheckBox" name="kcfg_keepDialogsWithParent">
+         <property name="text"><string>Keep dialogs over their parent window</string></property>
+         <property name="toolTip"><string>Dialogs move together with their parent window on reshuffle, and dialogs that don't declare a parent (such as portal file dialogs) are centered over the window they belong to.</string></property>
+        </widget>
+       </item>
       </layout>
      </widget>
      <widget class="QWidget" name="tab1">

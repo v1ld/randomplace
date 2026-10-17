@@ -7,6 +7,7 @@ RandomPlace is a KWin script for OLED screens. Window borders and title bars are
 - **Usage-aware.** When windows must overlap, the ones you use least get covered. Usage is remembered per app across logins.
 - **Reshuffle on demand.** `Meta+Ctrl+Shift+R` re-places every movable window on the current desktop.
 - **Separate layouts.** Each virtual desktop, Activity and screen is handled on its own.
+- **Dialogs stay over their parent.** On a reshuffle, dialogs move together with the window they belong to. Dialogs that don't declare a parent, such as the file Open/Save dialogs drawn by the desktop portal, are centered over the window that opened them.
 - **Settings page** in System Settings → Window Management → KWin Scripts → RandomPlace (configure button).
 
 Requires Plasma 6. Written against the Plasma 6.8 scripting API. The settings page uses the same mechanism as KWin's own bundled scripts: a KConfigXT schema plus a Designer form, loaded by `kcm_kwin4_genericscripted`.
@@ -48,6 +49,7 @@ Changes apply at the next window placement or reshuffle, with no reload needed.
 | `candidates` | 600 | Random positions tried when a window opens. |
 | `optimizeMs` | 150 | Time budget for a whole reshuffle, shared between screens. |
 | `maxRestarts` | 300 | Upper limit on layouts tried per reshuffle. |
+| `keepDialogsWithParent` | true | Dialogs move together with their parent on reshuffle, and dialogs without a declared parent are centered over the window they belong to. |
 | **Burn-in** | | |
 | `wear` | true | Track wear and steer placement away from worn areas. |
 | `wearWeight` | 1.0 | Strength of wear avoidance compared with overlap avoidance (calibrated below). At 0, wear is still tracked but ignored. |
@@ -85,6 +87,12 @@ Positions are chosen at random, with probability proportional to `exp(−cost / 
 - **New window:** 600 random positions are tried, plus extra samples around the most promising ones. If none of them is free of overlap, the few best positions aligned with another window's edges (such as an exact-fit gap) join the same random choice. An exact fit is then used often when the alternative would cover windows you use, and rarely when it would only cover ones you don't. Placement is capped at about 40 ms.
 - **Reshuffle:** several independent searches run within the time budget. Each one places windows one by one (more-used windows tend to go first), then refines the layout with random moves while gradually lowering the temperature (simulated annealing). One of the resulting layouts is chosen, again by a Boltzmann choice. Finally, each window drifts to a random spot within the free space around it. The budget is checked during the search, not just between searches.
 - **Never snapped to screen edges.** Positions that would leave the screen are discarded rather than clamped. Clamping is what piles windows up against the screen edges.
+
+### Dialogs
+
+- **Dialogs that name their parent:** KWin already places them over the parent, and the script never moves dialogs on its own. On a reshuffle, each dialog (and any dialog of that dialog) moves by the same amount as its parent, so it stays exactly where it was relative to it. If that would push it off-screen, it is kept on screen instead.
+- **Dialogs that don't name a parent:** this is common on Wayland for file dialogs, which the desktop portal draws in a separate process, so they arrive as ordinary windows of another app. They are recognized by their window type, or as portal windows, and centered over the most recently used window of the same app, or else the active window. From then on they follow that window like any other dialog.
+- **Child windows** that declare a parent, such as a settings window, are treated the same way and aren't reshuffled on their own.
 
 ### Wear map
 
@@ -275,7 +283,8 @@ journalctl --user -b -f | grep randomplace
 
 ## Notes and limits
 
-- **Left alone:** windows that are fullscreen, maximized, tiled, minimized, dialogs or transients are never moved. Non-maximized ones still count as obstacles.
+- **Left alone:** windows that are fullscreen, maximized, tiled or minimized are never moved, and non-maximized ones still count as obstacles. Dialogs and child windows are only ever moved to stay with their parent.
+- **Dialogs and wear:** dialogs are not counted in the wear map, because they are short-lived and sit over their parent.
 - **"On all desktops" windows:** they take part in the reshuffle of whichever desktop you are on, and their new position applies on every desktop.
 - **Usage is per app, not per desktop.** An app you use a lot is protected on every desktop.
 - **Pauses:** KWin runs scripts on its main thread, so a reshuffle pauses the desktop for up to `optimizeMs` in total, 150 ms by default.

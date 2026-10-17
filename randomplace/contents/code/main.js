@@ -75,6 +75,9 @@ function readSettings() { return {
     idleCapSec: Math.max(10, num("idleCapSec", 600)),
     maxApps: Math.max(10, Math.round(num("maxApps", 200))),
     debug: bool("debug", false),
+    // Dialogs stay over their parent: they move with it on reshuffle, and
+    // dialogs that don't say who their parent is are centered over it.
+    keepDialogsWithParent: bool("keepDialogsWithParent", true),
     excludeClasses: String(readConfig("excludeClasses",
         "krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge," +
         "org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter"))
@@ -257,6 +260,109 @@ function usableArea(win, output, desktop, noMargin) {
     return r;
 }
 
+// ---------------------------------------------------------------- dialogs
+//
+// Dialogs belong over the window they came from. KWin already places a
+// dialog over its parent when the dialog names one (transientFor); this
+// script never moves dialogs on its own, and on reshuffle moves each dialog
+// together with its parent so the two stay together. Some dialogs don't name
+// a parent: notably file dialogs shown by the desktop portal (a separate
+// process) on Wayland, which arrive as ordinary windows of another app. Those
+// are recognized and centered over the window they most likely belong to: the
+// most recently used window of the same app, or else the active window.
+
+const PORTAL_CLASSES = ["xdg-desktop-portal-kde", "org.freedesktop.impl.portal.desktop.kde",
+                        "xdg-desktop-portal-gtk", "xdg-desktop-portal-gnome"];
+const dialogParent = new Map();   // dialog window id -> window it was centered over
+
+function isPortal(w) {
+    return PORTAL_CLASSES.indexOf(String(w.resourceClass || "").toLowerCase()) !== -1;
+}
+
+// A dialog-like or child window (never laid out on its own).
+function isChild(w) {
+    return !!(w.transient || w.transientFor || w.dialog || w.modal || w.utility || w.splash || isPortal(w));
+}
+
+// The window a child belongs to, following parents up to a top-level window.
+function topParent(w) {
+    let p = w, guard = 0;
+    while (p && guard++ < 10) {
+        const next = p.transientFor || dialogParent.get(wid(p));
+        if (!next || next === p) break;
+        p = next;
+    }
+    return p === w ? null : p;
+}
+
+// A dialog that does not name its parent.
+function isOrphanDialog(w) {
+    if (!w || w.transientFor || excluded(w)) return false;
+    return !!(w.dialog || w.modal || w.transient || isPortal(w));
+}
+
+function guessParent(w) {
+    const desktop = (w.desktops && w.desktops.length) ? w.desktops[0] : workspace.currentDesktop;
+    const ok = function (o) {
+        return o && o !== w && o.normalWindow && !o.deleted && !o.minimized && !isChild(o) &&
+               onDesktop(o, desktop);
+    };
+    let best = null, bestT = -1;
+    allWindows().forEach(function (o) {
+        if (!ok(o)) return;
+        const same = (w.pid && o.pid === w.pid) || appKey(o) === appKey(w);
+        if (!same) return;
+        const t = winLast.get(wid(o)) || 0;
+        if (t > bestT) { bestT = t; best = o; }
+    });
+    if (best) return best;
+    const a = workspace.activeWindow;
+    if (ok(a)) return a;
+    // the dialog may already be active: fall back to the most recently focused window
+    allWindows().forEach(function (o) {
+        if (!ok(o)) return;
+        const t = winLast.get(wid(o)) || 0;
+        if (t > bestT) { bestT = t; best = o; }
+    });
+    return best;
+}
+
+function clampInto(x, y, w, h, area) {
+    return {
+        x: Math.round(clamp(x, area.x, area.x + area.width - w)),
+        y: Math.round(clamp(y, area.y, area.y + area.height - h)),
+    };
+}
+
+const centerOverParent = guard("centerOverParent", function (w) {
+    const p = guessParent(w);
+    if (!p) { log("dialog '" + w.caption + "': no parent found, left where KWin put it"); return; }
+    const g = w.frameGeometry, pg = p.frameGeometry;
+    const pds = p.desktops || [];
+    const area = usableArea(p, p.output, pds.length ? pds[0] : workspace.currentDesktop);
+    const pos = clampInto(pg.x + (pg.width - g.width) / 2, pg.y + (pg.height - g.height) / 2,
+                          g.width, g.height, area);
+    dialogParent.set(wid(w), p);
+    log("dialog '" + w.caption + "' centered over '" + p.caption + "'");
+    moveTo(w, pos.x, pos.y);
+});
+
+// After a reshuffle moved some windows: move their dialogs by the same amount.
+function moveDialogsWith(moved, area) {
+    if (!CFG.keepDialogsWithParent || moved.size === 0) return 0;
+    let n = 0;
+    allWindows().forEach(function (c) {
+        if (c.deleted || c.minimized || !isChild(c)) return;
+        const p = topParent(c);
+        const d = p && moved.get(wid(p));
+        if (!d) return;
+        const g = c.frameGeometry;
+        const pos = clampInto(g.x + d.dx, g.y + d.dy, g.width, g.height, area);
+        if (moveTo(c, pos.x, pos.y)) n++;
+    });
+    return n;
+}
+
 // A window we are allowed to relocate. Returns "" if yes, else the reason.
 function whyNot(w) {
     if (!w) return "no window";
@@ -264,6 +370,7 @@ function whyNot(w) {
     if (w.deleted) return "deleted";
     if (w.dialog) return "dialog";
     if (w.transient) return "transient";
+    if (isChild(w)) return "dialog or child window";
     if (w.fullScreen) return "fullscreen";
     if (w.minimized) return "minimized";
     if (w.moveable === false) return "not moveable";
@@ -1212,6 +1319,8 @@ const reshuffle = guard("reshuffle", function () {
         const items = [];
         visible.forEach(function (w) {
             if (fillsArea(w, area)) { log("reshuffle skips '" + w.caption + "': fills area"); return; }
+            // dialogs aren't laid out on their own: they follow their parent below
+            if (CFG.keepDialogsWithParent && isChild(w)) return;
             const reason = whyNot(w);
             if (reason) log("reshuffle keeps '" + w.caption + "' fixed: " + reason);
             items.push(itemFor(w, z.get(wid(w)) || 0, usage, reason === ""));
@@ -1225,7 +1334,14 @@ const reshuffle = guard("reshuffle", function () {
         const hiddenBefore = exactCost(items, false);
         const wearBefore = meanWearUnder(movable, wm);
         const r = optimizeLayout(items, area, wm, deadline);
-        movable.forEach(function (it) { moveTo(it.w, it.x, it.y); });
+        const moved = new Map();
+        movable.forEach(function (it) {
+            const g = it.w.frameGeometry;
+            const dx = it.x - g.x, dy = it.y - g.y;
+            if (moveTo(it.w, it.x, it.y) && (dx || dy)) moved.set(wid(it.w), { dx: dx, dy: dy });
+        });
+        const nd = moveDialogsWith(moved, area);
+        if (nd) log("moved " + nd + " dialog(s) along with their parent");
 
         say("reshuffled " + movable.length + " of " + visible.length +
             " window(s) on output " + output.name +
@@ -1456,6 +1572,13 @@ onActivated(workspace.activeWindow);
 
 workspace.windowAdded.connect(guard("windowAdded", function (w) {
     heartbeat();
+    loadConfig();
+    // A dialog that doesn't name its parent: put it over the window it belongs to.
+    // (Dialogs that do name one are placed over it by KWin, and left alone.)
+    if (CFG.keepDialogsWithParent && isOrphanDialog(w) && !w.fullScreen) {
+        whenSized(w, function () { centerOverParent(w); });
+        return;
+    }
     const reason = whyNot(w);
     if (reason) { log("ignore new '" + w.caption + "': " + reason); return; }
     whenSized(w, function () { placeNew(w); });
@@ -1469,6 +1592,7 @@ workspace.windowRemoved.connect(guard("windowRemoved", function (w) {
         currentSince = now;
     }
     winLast.delete(wid(w));
+    dialogParent.delete(wid(w));
     try { sampleWear(now, true); } catch (e) { say("ERROR in wear sample: " + e); }
     maybeSave(now, false);
 }));
