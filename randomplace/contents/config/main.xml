@@ -127,6 +127,10 @@
     </entry>
 
     <!-- Advanced -->
+    <entry name="keepSizeOnMove" type="Bool">
+      <label>Undo size changes apps make right after being moved</label>
+      <default>true</default>
+    </entry>
     <entry name="excludeClasses" type="String">
       <label>Window classes never moved</label>
       <default>krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge,org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter</default>

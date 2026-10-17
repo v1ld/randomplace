@@ -78,6 +78,8 @@ function readSettings() { return {
     // Dialogs stay over their parent: they move with it on reshuffle, and
     // dialogs that don't say who their parent is are centered over it.
     keepDialogsWithParent: bool("keepDialogsWithParent", true),
+    // Undo size changes an app makes on its own right after being moved.
+    keepSizeOnMove: bool("keepSizeOnMove", true),
     excludeClasses: String(readConfig("excludeClasses",
         "krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge," +
         "org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter"))
@@ -1190,24 +1192,68 @@ function applied(w, x, y) {
 
 // Move a window and verify KWin actually accepted it; if the first way of
 // assigning the geometry is ignored, retry with a plain object.
+// Some apps (Steam, under XWayland with display scaling) answer being moved
+// by resizing themselves. For a short while after the script moves a window,
+// a size change the app makes on its own is undone, at most twice, so the
+// script never fights an app for long. Resizes you make yourself (dragging a
+// window edge) are never touched.
+const SIZE_GUARD_MS = 2000;
+const SIZE_GUARD_MAX = 2;
+const sizeGuards = new Map();       // window id -> guard
+const warnedResizers = {};
+
+function guardSize(w, width, height) {
+    if (!CFG.keepSizeOnMove || !w.frameGeometryChanged) return;
+    const id = wid(w);
+    const old = sizeGuards.get(id);
+    if (old) { try { w.frameGeometryChanged.disconnect(old.handler); } catch (e) { /* gone */ } }
+    const gd = { width: width, height: height, until: Date.now() + SIZE_GUARD_MS, restores: 0, restoring: false };
+    gd.handler = guard("sizeGuard", function () {
+        const done = function () {
+            try { w.frameGeometryChanged.disconnect(gd.handler); } catch (e) { /* gone */ }
+            if (sizeGuards.get(id) === gd) sizeGuards.delete(id);
+        };
+        if (w.deleted || Date.now() > gd.until || gd.restores >= SIZE_GUARD_MAX) { done(); return; }
+        if (gd.restoring || w.move || w.resize || w.fullScreen || w.minimized) return;   // user action / ours
+        const g = w.frameGeometry;
+        if (Math.abs(g.width - gd.width) < 1.5 && Math.abs(g.height - gd.height) < 1.5) return;
+        gd.restores++;
+        gd.restoring = true;
+        w.frameGeometry = { x: g.x, y: g.y, width: gd.width, height: gd.height };
+        gd.restoring = false;
+        const key = appKey(w);
+        if (!warnedResizers[key]) {
+            warnedResizers[key] = true;
+            say("'" + w.caption + "' (" + key + ") resized itself after being moved (" +
+                Math.round(g.width) + "x" + Math.round(g.height) + "); restored its size " +
+                Math.round(gd.width) + "x" + Math.round(gd.height));
+        } else {
+            log("restored size of '" + w.caption + "' after it resized itself");
+        }
+    });
+    sizeGuards.set(id, gd);
+    w.frameGeometryChanged.connect(gd.handler);
+}
+
 function moveTo(w, x, y) {
     if (!isFinite(x) || !isFinite(y)) {
         say("refusing to move '" + w.caption + "' to " + x + "," + y);
         return false;
     }
     const g = w.frameGeometry;     // copy, modify, assign back
+    const w0 = g.width, h0 = g.height;
     g.x = x;
     g.y = y;
     w.frameGeometry = g;
     let how = "rect copy";
     if (!applied(w, x, y)) {
-        const c = w.frameGeometry;
-        w.frameGeometry = { x: x, y: y, width: c.width, height: c.height };
+        w.frameGeometry = { x: x, y: y, width: w0, height: h0 };
         how = "plain object";
     }
     const a = w.frameGeometry;
     if (applied(w, x, y)) {
         log("moved '" + w.caption + "' to " + x + "," + y + " via " + how);
+        guardSize(w, w0, h0);
         return true;
     }
     say("KWin ignored move of '" + w.caption + "' (wanted " + x + "," + y +

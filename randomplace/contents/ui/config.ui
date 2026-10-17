@@ -328,19 +328,25 @@
          <property name="wordWrap"><bool>true</bool></property>
         </widget>
        </item>
-       <item row="1" column="0">
+       <item row="1" column="0" colspan="2">
+        <widget class="QCheckBox" name="kcfg_keepSizeOnMove">
+         <property name="text"><string>Undo size changes apps make right after being moved</string></property>
+         <property name="toolTip"><string>Some apps (e.g. Steam under XWayland with display scaling) resize themselves when moved. For 2 seconds after a move, such a size change is undone (at most twice). Resizing a window yourself is never affected.</string></property>
+        </widget>
+       </item>
+       <item row="2" column="0">
         <widget class="QLabel" name="label_excludeClasses">
          <property name="text"><string>Window classes never moved:</string></property>
          <property name="buddy"><cstring>kcfg_excludeClasses</cstring></property>
         </widget>
        </item>
-       <item row="1" column="1">
+       <item row="2" column="1">
         <widget class="QLineEdit" name="kcfg_excludeClasses">
          <property name="toolTip"><string>Comma-separated window classes (e.g. org.kde.konsole) that are never moved.</string></property>
          <property name="text"><string>krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge,org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter</string></property>
         </widget>
        </item>
-       <item row="2" column="0" colspan="2">
+       <item row="3" column="0" colspan="2">
         <widget class="QCheckBox" name="kcfg_debug">
          <property name="text"><string>Debug logging</string></property>
          <property name="toolTip"><string>Log every decision to the journal (journalctl --user -f | grep randomplace).</string></property>
