@@ -1,0 +1,21 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Id": "randomplace",
+        "Name": "RandomPlace",
+        "Description": "Spreads OLED wear: random window placement steered away from worn screen areas, covering least-used windows when overlap is needed. Hotkey reshuffles the layout.",
+        "Icon": "preferences-system-windows-placement",
+        "Authors": [
+            {
+                "Name": "v1ld.git@gmail.com + Claude Opus 5.5"
+            }
+        ],
+        "Version": "1.4",
+        "License": "MIT",
+        "EnabledByDefault": false
+    },
+    "X-Plasma-API": "javascript",
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-MainScript": "code/main.js",
+    "X-KDE-ConfigModule": "kwin/effects/configs/kcm_kwin4_genericscripted"
+}

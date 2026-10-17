@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+                          http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name="kwinrc"/>
+  <group name="">
+    <!-- Placement -->
+    <entry name="variety" type="Double">
+      <label>Randomness versus exposure</label>
+      <default>1.0</default>
+      <min>0</min>
+      <max>10</max>
+    </entry>
+    <entry name="baseOverlapCost" type="Double">
+      <label>Cost of covering an unused window</label>
+      <default>0.15</default>
+      <min>0</min>
+      <max>5</max>
+    </entry>
+    <entry name="margin" type="Int">
+      <label>Margin from screen edges (px)</label>
+      <default>0</default>
+      <min>0</min>
+      <max>500</max>
+    </entry>
+    <entry name="candidates" type="Int">
+      <label>Random positions tried for a new window</label>
+      <default>600</default>
+      <min>50</min>
+      <max>5000</max>
+    </entry>
+    <entry name="optimizeMs" type="Int">
+      <label>Reshuffle time budget per screen (ms)</label>
+      <default>150</default>
+      <min>10</min>
+      <max>2000</max>
+    </entry>
+    <entry name="maxRestarts" type="Int">
+      <label>Maximum layouts tried per reshuffle</label>
+      <default>300</default>
+      <min>3</min>
+      <max>5000</max>
+    </entry>
+
+    <!-- Burn-in wear map -->
+    <entry name="wear" type="Bool">
+      <label>Track screen wear and avoid worn areas</label>
+      <default>true</default>
+    </entry>
+    <entry name="wearWeight" type="Double">
+      <label>Strength of wear avoidance</label>
+      <default>1.0</default>
+      <min>0</min>
+      <max>20</max>
+    </entry>
+    <entry name="wearCell" type="Int">
+      <label>Wear map cell size (logical px)</label>
+      <default>20</default>
+      <min>8</min>
+      <max>100</max>
+    </entry>
+    <entry name="wearHalfLifeDays" type="Int">
+      <label>Wear history half-life (days)</label>
+      <default>180</default>
+      <min>1</min>
+      <max>3650</max>
+    </entry>
+    <entry name="wearSampleSec" type="Int">
+      <label>Wear sampling interval (s)</label>
+      <default>5</default>
+      <min>1</min>
+      <max>20</max>
+    </entry>
+    <entry name="titleBarHeight" type="Int">
+      <label>Title bar height (logical px)</label>
+      <default>32</default>
+      <min>0</min>
+      <max>200</max>
+    </entry>
+
+    <!-- Usage -->
+    <entry name="recencyWeight" type="Double">
+      <label>Recent focus versus long-term app use</label>
+      <default>0.6</default>
+      <min>0</min>
+      <max>1</max>
+    </entry>
+    <entry name="recencyHalfLifeSec" type="Int">
+      <label>Recency half-life (s)</label>
+      <default>600</default>
+      <min>1</min>
+      <max>86400</max>
+    </entry>
+    <entry name="usageHalfLifeDays" type="Double">
+      <label>App usage half-life (days)</label>
+      <default>14</default>
+      <min>0.1</min>
+      <max>365</max>
+    </entry>
+    <entry name="idleCapSec" type="Int">
+      <label>Longest stretch counted at once (s)</label>
+      <default>600</default>
+      <min>10</min>
+      <max>86400</max>
+    </entry>
+    <entry name="persist" type="Bool">
+      <label>Remember usage and wear across logins</label>
+      <default>true</default>
+    </entry>
+    <entry name="saveIntervalSec" type="Int">
+      <label>Save interval (s)</label>
+      <default>120</default>
+      <min>10</min>
+      <max>3600</max>
+    </entry>
+    <entry name="maxApps" type="Int">
+      <label>Apps remembered</label>
+      <default>200</default>
+      <min>10</min>
+      <max>2000</max>
+    </entry>
+
+    <!-- Advanced -->
+    <entry name="excludeClasses" type="String">
+      <label>Window classes never moved</label>
+      <default>krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge,org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter</default>
+    </entry>
+    <entry name="debug" type="Bool">
+      <label>Debug logging</label>
+      <default>false</default>
+    </entry>
+  </group>
+</kcfg>

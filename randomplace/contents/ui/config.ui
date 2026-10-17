@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>RandomPlaceConfig</class>
+ <widget class="QWidget" name="RandomPlaceConfig">
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item>
+    <widget class="QTabWidget" name="tabs">
+     <property name="currentIndex"><number>0</number></property>
+     <widget class="QWidget" name="tab0">
+      <attribute name="title"><string>Placement</string></attribute>
+      <layout class="QFormLayout" name="form0">
+       <property name="fieldGrowthPolicy"><enum>QFormLayout::ExpandingFieldsGrow</enum></property>
+       <item row="0" column="0" colspan="2">
+        <widget class="QLabel" name="intro0">
+         <property name="text"><string>Window positions are chosen at random. Spots that expose more of the windows you use most are likelier, but never certain, so positions keep changing. Reshuffle shortcut: Meta+Ctrl+Shift+R (change it under Shortcuts → KWin).</string></property>
+         <property name="wordWrap"><bool>true</bool></property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="label_variety">
+         <property name="text"><string>Randomness versus exposure:</string></property>
+         <property name="buddy"><cstring>kcfg_variety</cstring></property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QDoubleSpinBox" name="kcfg_variety">
+         <property name="toolTip"><string>0 = always the best spot found. 1 = a spot that hides about 5% more of an average window is still reasonably likely. Higher = more variety, more overlap.</string></property>
+         <property name="decimals"><number>2</number></property>
+         <property name="minimum"><double>0</double></property>
+         <property name="maximum"><double>10</double></property>
+         <property name="singleStep"><double>0.1</double></property>
+         <property name="value"><double>1.0</double></property>
+        </widget>
+       </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="label_baseOverlapCost">
+         <property name="text"><string>Cost of covering an unused window:</string></property>
+         <property name="buddy"><cstring>kcfg_baseOverlapCost</cstring></property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <widget class="QDoubleSpinBox" name="kcfg_baseOverlapCost">
+         <property name="toolTip"><string>How much covering even a never-used window counts, relative to a heavily used one (which counts about 1 + this).</string></property>
+         <property name="decimals"><number>2</number></property>
+         <property name="minimum"><double>0</double></property>
+         <property name="maximum"><double>5</double></property>
+         <property name="singleStep"><double>0.05</double></property>
+         <property name="value"><double>0.15</double></property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_margin">
+         <property name="text"><string>Margin from screen edges (px):</string></property>
+         <property name="buddy"><cstring>kcfg_margin</cstring></property>
+        </widget>
+       </item>
+       <item row="3" column="1">
+        <widget class="QSpinBox" name="kcfg_margin">
+         <property name="toolTip"><string>Pixels kept clear of the usable-area edges.</string></property>
+         <property name="minimum"><number>0</number></property>
+         <property name="maximum"><number>500</number></property>
+         <property name="suffix"><string> px</string></property>
+         <property name="value"><number>0</number></property>
+        </widget>
+       </item>
+       <item row="4" column="0">
+        <widget class="QLabel" name="label_candidates">
+         <property name="text"><string>Random positions tried for a new window:</string></property>
+         <property name="buddy"><cstring>kcfg_candidates</cstring></property>
+        </widget>
+       </item>
+       <item row="4" column="1">
+        <widget class="QSpinBox" name="kcfg_candidates">
+         <property name="toolTip"><string>More = finds tight gaps more reliably when opening a window, slightly slower.</string></property>
+         <property name="minimum"><number>50</number></property>
+         <property name="maximum"><number>5000</number></property>
+         <property name="value"><number>600</number></property>
+        </widget>
+       </item>
+       <item row="5" column="0">
+        <widget class="QLabel" name="label_optimizeMs">
+         <property name="text"><string>Reshuffle time budget per screen (ms):</string></property>
+         <property name="buddy"><cstring>kcfg_optimizeMs</cstring></property>
+        </widget>
+       </item>
+       <item row="5" column="1">
+        <widget class="QSpinBox" name="kcfg_optimizeMs">
+         <property name="toolTip"><string>KWin pauses while a reshuffle is computed; this caps the pause per screen.</string></property>
+         <property name="minimum"><number>10</number></property>
+         <property name="maximum"><number>2000</number></property>
+         <property name="suffix"><string> ms</string></property>
+         <property name="value"><number>150</number></property>
+        </widget>
+       </item>
+       <item row="6" column="0">
+        <widget class="QLabel" name="label_maxRestarts">
+         <property name="text"><string>Maximum layouts tried per reshuffle:</string></property>
+         <property name="buddy"><cstring>kcfg_maxRestarts</cstring></property>
+        </widget>
+       </item>
+       <item row="6" column="1">
+        <widget class="QSpinBox" name="kcfg_maxRestarts">
+         <property name="toolTip"><string>Upper limit on independent layouts the reshuffle tries.</string></property>
+         <property name="minimum"><number>3</number></property>
+         <property name="maximum"><number>5000</number></property>
+         <property name="value"><number>300</number></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tab1">
+      <attribute name="title"><string>Burn-in</string></attribute>
+      <layout class="QFormLayout" name="form1">
+       <property name="fieldGrowthPolicy"><enum>QFormLayout::ExpandingFieldsGrow</enum></property>
+       <item row="0" column="0" colspan="2">
+        <widget class="QLabel" name="intro1">
+         <property name="text"><string>The wear map records, per screen and across logins, how long window borders and title bars have been shown on each part of the screen. New positions are steered towards less-worn areas.</string></property>
+         <property name="wordWrap"><bool>true</bool></property>
+        </widget>
+       </item>
+       <item row="1" column="0" colspan="2">
+        <widget class="QCheckBox" name="kcfg_wear">
+         <property name="text"><string>Track screen wear and avoid worn areas</string></property>
+         <property name="toolTip"><string>Turn wear tracking and wear-aware placement on or off.</string></property>
+        </widget>
+       </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="label_wearWeight">
+         <property name="text"><string>Strength of wear avoidance:</string></property>
+         <property name="buddy"><cstring>kcfg_wearWeight</cstring></property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <widget class="QDoubleSpinBox" name="kcfg_wearWeight">
+         <property name="toolTip"><string>How strongly placement avoids worn areas compared with avoiding overlap. 0 = track wear but ignore it.</string></property>
+         <property name="decimals"><number>2</number></property>
+         <property name="minimum"><double>0</double></property>
+         <property name="maximum"><double>20</double></property>
+         <property name="singleStep"><double>0.25</double></property>
+         <property name="value"><double>1.0</double></property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_wearCell">
+         <property name="text"><string>Wear map cell size (logical px):</string></property>
+         <property name="buddy"><cstring>kcfg_wearCell</cstring></property>
+        </widget>
+       </item>
+       <item row="3" column="1">
+        <widget class="QSpinBox" name="kcfg_wearCell">
+         <property name="toolTip"><string>Resolution of the wear map. Changing it resamples the existing history.</string></property>
+         <property name="minimum"><number>8</number></property>
+         <property name="maximum"><number>100</number></property>
+         <property name="suffix"><string> px</string></property>
+         <property name="value"><number>20</number></property>
+        </widget>
+       </item>
+       <item row="4" column="0">
+        <widget class="QLabel" name="label_wearHalfLifeDays">
+         <property name="text"><string>Wear history half-life (days):</string></property>
+         <property name="buddy"><cstring>kcfg_wearHalfLifeDays</cstring></property>
+        </widget>
+       </item>
+       <item row="4" column="1">
+        <widget class="QSpinBox" name="kcfg_wearHalfLifeDays">
+         <property name="toolTip"><string>How slowly old wear fades from the map.</string></property>
+         <property name="minimum"><number>1</number></property>
+         <property name="maximum"><number>3650</number></property>
+         <property name="suffix"><string> days</string></property>
+         <property name="value"><number>180</number></property>
+        </widget>
+       </item>
+       <item row="5" column="0">
+        <widget class="QLabel" name="label_wearSampleSec">
+         <property name="text"><string>Wear sampling interval (s):</string></property>
+         <property name="buddy"><cstring>kcfg_wearSampleSec</cstring></property>
+        </widget>
+       </item>
+       <item row="5" column="1">
+        <widget class="QSpinBox" name="kcfg_wearSampleSec">
+         <property name="toolTip"><string>How often the on-screen layout is sampled (on the helper's clock; at most 20 s).</string></property>
+         <property name="minimum"><number>1</number></property>
+         <property name="maximum"><number>20</number></property>
+         <property name="suffix"><string> s</string></property>
+         <property name="value"><number>5</number></property>
+        </widget>
+       </item>
+       <item row="6" column="0">
+        <widget class="QLabel" name="label_titleBarHeight">
+         <property name="text"><string>Title bar height (logical px):</string></property>
+         <property name="buddy"><cstring>kcfg_titleBarHeight</cstring></property>
+        </widget>
+       </item>
+       <item row="6" column="1">
+        <widget class="QSpinBox" name="kcfg_titleBarHeight">
+         <property name="toolTip"><string>Height of the title bar band counted as wear (it holds the most static content: title text and buttons).</string></property>
+         <property name="minimum"><number>0</number></property>
+         <property name="maximum"><number>200</number></property>
+         <property name="suffix"><string> px</string></property>
+         <property name="value"><number>32</number></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tab2">
+      <attribute name="title"><string>Usage</string></attribute>
+      <layout class="QFormLayout" name="form2">
+       <property name="fieldGrowthPolicy"><enum>QFormLayout::ExpandingFieldsGrow</enum></property>
+       <item row="0" column="0" colspan="2">
+        <widget class="QLabel" name="intro2">
+         <property name="text"><string>Windows of apps you use more, and windows you focused recently, are covered less.</string></property>
+         <property name="wordWrap"><bool>true</bool></property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="label_recencyWeight">
+         <property name="text"><string>Recent focus versus long-term app use:</string></property>
+         <property name="buddy"><cstring>kcfg_recencyWeight</cstring></property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QDoubleSpinBox" name="kcfg_recencyWeight">
+         <property name="toolTip"><string>0 = only long-term per-app use counts; 1 = only how recently each window was focused.</string></property>
+         <property name="decimals"><number>2</number></property>
+         <property name="minimum"><double>0</double></property>
+         <property name="maximum"><double>1</double></property>
+         <property name="singleStep"><double>0.05</double></property>
+         <property name="value"><double>0.6</double></property>
+        </widget>
+       </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="label_recencyHalfLifeSec">
+         <property name="text"><string>Recency half-life (s):</string></property>
+         <property name="buddy"><cstring>kcfg_recencyHalfLifeSec</cstring></property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <widget class="QSpinBox" name="kcfg_recencyHalfLifeSec">
+         <property name="toolTip"><string>How quickly a window's "recently focused" bonus fades.</string></property>
+         <property name="minimum"><number>1</number></property>
+         <property name="maximum"><number>86400</number></property>
+         <property name="suffix"><string> s</string></property>
+         <property name="value"><number>600</number></property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_usageHalfLifeDays">
+         <property name="text"><string>App usage half-life (days):</string></property>
+         <property name="buddy"><cstring>kcfg_usageHalfLifeDays</cstring></property>
+        </widget>
+       </item>
+       <item row="3" column="1">
+        <widget class="QDoubleSpinBox" name="kcfg_usageHalfLifeDays">
+         <property name="toolTip"><string>How quickly remembered app usage fades.</string></property>
+         <property name="decimals"><number>1</number></property>
+         <property name="minimum"><double>0.1</double></property>
+         <property name="maximum"><double>365</double></property>
+         <property name="singleStep"><double>1</double></property>
+         <property name="suffix"><string> days</string></property>
+         <property name="value"><double>14</double></property>
+        </widget>
+       </item>
+       <item row="4" column="0">
+        <widget class="QLabel" name="label_idleCapSec">
+         <property name="text"><string>Longest stretch counted at once (s):</string></property>
+         <property name="buddy"><cstring>kcfg_idleCapSec</cstring></property>
+        </widget>
+       </item>
+       <item row="4" column="1">
+        <widget class="QSpinBox" name="kcfg_idleCapSec">
+         <property name="toolTip"><string>A single uninterrupted stretch (focus time or wear) never counts for more than this, so an idle or locked screen does not distort the numbers.</string></property>
+         <property name="minimum"><number>10</number></property>
+         <property name="maximum"><number>86400</number></property>
+         <property name="suffix"><string> s</string></property>
+         <property name="value"><number>600</number></property>
+        </widget>
+       </item>
+       <item row="5" column="0" colspan="2">
+        <widget class="QCheckBox" name="kcfg_persist">
+         <property name="text"><string>Remember usage and wear across logins</string></property>
+         <property name="toolTip"><string>Needs the small helper service installed by install.sh.</string></property>
+        </widget>
+       </item>
+       <item row="6" column="0">
+        <widget class="QLabel" name="label_saveIntervalSec">
+         <property name="text"><string>Save interval (s):</string></property>
+         <property name="buddy"><cstring>kcfg_saveIntervalSec</cstring></property>
+        </widget>
+       </item>
+       <item row="6" column="1">
+        <widget class="QSpinBox" name="kcfg_saveIntervalSec">
+         <property name="toolTip"><string>Minimum time between saves.</string></property>
+         <property name="minimum"><number>10</number></property>
+         <property name="maximum"><number>3600</number></property>
+         <property name="suffix"><string> s</string></property>
+         <property name="value"><number>120</number></property>
+        </widget>
+       </item>
+       <item row="7" column="0">
+        <widget class="QLabel" name="label_maxApps">
+         <property name="text"><string>Apps remembered:</string></property>
+         <property name="buddy"><cstring>kcfg_maxApps</cstring></property>
+        </widget>
+       </item>
+       <item row="7" column="1">
+        <widget class="QSpinBox" name="kcfg_maxApps">
+         <property name="toolTip"><string>Least-used apps beyond this are forgotten.</string></property>
+         <property name="minimum"><number>10</number></property>
+         <property name="maximum"><number>2000</number></property>
+         <property name="value"><number>200</number></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tab3">
+      <attribute name="title"><string>Advanced</string></attribute>
+      <layout class="QFormLayout" name="form3">
+       <property name="fieldGrowthPolicy"><enum>QFormLayout::ExpandingFieldsGrow</enum></property>
+       <item row="0" column="0" colspan="2">
+        <widget class="QLabel" name="intro3">
+         <property name="text"><string>Settings apply at the next window placement or reshuffle.</string></property>
+         <property name="wordWrap"><bool>true</bool></property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="label_excludeClasses">
+         <property name="text"><string>Window classes never moved:</string></property>
+         <property name="buddy"><cstring>kcfg_excludeClasses</cstring></property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QLineEdit" name="kcfg_excludeClasses">
+         <property name="toolTip"><string>Comma-separated window classes (e.g. org.kde.konsole) that are never moved.</string></property>
+         <property name="text"><string>krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge,org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter</string></property>
+        </widget>
+       </item>
+       <item row="2" column="0" colspan="2">
+        <widget class="QCheckBox" name="kcfg_debug">
+         <property name="text"><string>Debug logging</string></property>
+         <property name="toolTip"><string>Log every decision to the journal (journalctl --user -f | grep randomplace).</string></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
