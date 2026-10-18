@@ -22,8 +22,8 @@ done
 kpackagetool6 --type=KWin/Script --upgrade "$SRC" >/dev/null 2>&1 \
   || kpackagetool6 --type=KWin/Script --install "$SRC"
 kwriteconfig6 --file kwinrc --group Plugins --key "${ID}Enabled" true
-# metadata.json stays editable (kpackagetool6 may install it read-only)
-chmod 0666 "$PKG/metadata.json" 2>/dev/null || true
+# metadata.json stays editable by you (kpackagetool6 may install it read-only)
+chmod 0644 "$PKG/metadata.json" 2>/dev/null || true
 
 # ---- usage-store helper (optional; enables remembering usage across logins)
 persist="off"

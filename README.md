@@ -380,7 +380,8 @@ These recommendations came out of working on RandomPlace, for an Alienware AW392
 
 ## Version history
 
-- **2.0:** idle-aware automatic reshuffle and drift (helper gains Wayland idle detection); new Automatic settings tab; metadata.json author field and file mode 0666.
+- **2.0.1:** no more "used before its declaration" warnings from KWin at load; metadata.json installed with mode 0644.
+- **2.0:** idle-aware automatic reshuffle and drift (helper gains Wayland idle detection); new Automatic settings tab; metadata.json author field.
 - **1.4.4:** corrected the size-restore log message (it printed the restored size twice).
 - **1.4.3:** maximized and snapped windows are left alone; size guard widened to 5 s and also catches changes during the move (fixed Steam resizing itself on reshuffle).
 - **1.4.2:** size guard for apps that resize themselves when moved.

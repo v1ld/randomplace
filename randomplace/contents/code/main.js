@@ -156,6 +156,8 @@ const winLast = new Map();
 let current = null;        // currently focused window
 let currentSince = 0;      // when its current focus stretch started
 let dirty = false;         // something changed since last save
+let screenLocked = false;   // set from the screen saver's lock state on every clock tick
+let lastReshuffleAt = Date.now();   // any reshuffle (shortcut or automatic)
 
 function halfLifeMs() { return CFG.usageHalfLifeDays * 86400000; }
 
@@ -484,7 +486,6 @@ const wearMaps = new Map();      // output name -> map
 let storedWear = {};             // wear entries loaded from the store, not yet merged
 let wearSnapshot = [];           // what was on screen at the last sample
 let lastWearSample = Date.now();
-let screenLocked = false;
 let lastTickReply = 0;
 const WEAR_CAP = 8;              // normalized wear is capped (one hot spot can't dominate)
 const MAX_WEAR_CELLS = 1000000;  // sanity limit when decoding stored maps
@@ -1749,7 +1750,6 @@ function onTick() {
 let idleSec = -1;            // latest reading; -1 = unknown
 let idleReadAt = 0;
 let warnedNoIdle = false;
-let lastReshuffleAt = Date.now();
 let lastDriftAt = Date.now();
 const driftDir = new Map();  // window id -> direction (radians)
 
@@ -1784,29 +1784,6 @@ function busyScreen() {
         if (w.deleted || w.minimized || !onDesktop(w, desktop) || !onActivity(w, activity)) return false;
         return w.fullScreen || w.move || w.resize;
     });
-}
-
-function autoActions(now) {
-    if (!autoWanted() || screenLocked) return;
-    const idle = idleFor(now);
-    if (idle < 0) return;
-    if (CFG.autoReshuffle && idle >= CFG.autoIdleSec &&
-        now - lastReshuffleAt >= CFG.autoReshuffleMin * 60000 && !busyScreen()) {
-        reshuffle("automatic, idle " + Math.round(idle) + " s");
-        lastDriftAt = Date.now();
-        return;
-    }
-    if (CFG.drift && idle >= CFG.driftIdleSec && now - lastDriftAt >= CFG.driftEverySec * 1000 && !busyScreen()) {
-        lastDriftAt = now;
-        driftStep();
-    }
-}
-
-function onUnlock(now) {
-    if (CFG.autoReshuffle && CFG.reshuffleOnUnlock && now - lastReshuffleAt >= CFG.autoReshuffleMin * 60000 &&
-        !busyScreen()) {
-        reshuffle("automatic, after unlock");
-    }
 }
 
 // Move every movable window a few pixels along its own direction, turning
@@ -1856,6 +1833,29 @@ const driftStep = guard("drift", function () {
     sampleWear(Date.now(), true);
     if (total) log("drift: moved " + total + " window(s) by " + CFG.driftPx + " px");
 });
+
+function autoActions(now) {
+    if (!autoWanted() || screenLocked) return;
+    const idle = idleFor(now);
+    if (idle < 0) return;
+    if (CFG.autoReshuffle && idle >= CFG.autoIdleSec &&
+        now - lastReshuffleAt >= CFG.autoReshuffleMin * 60000 && !busyScreen()) {
+        reshuffle("automatic, idle " + Math.round(idle) + " s");
+        lastDriftAt = Date.now();
+        return;
+    }
+    if (CFG.drift && idle >= CFG.driftIdleSec && now - lastDriftAt >= CFG.driftEverySec * 1000 && !busyScreen()) {
+        lastDriftAt = now;
+        driftStep();
+    }
+}
+
+function onUnlock(now) {
+    if (CFG.autoReshuffle && CFG.reshuffleOnUnlock && now - lastReshuffleAt >= CFG.autoReshuffleMin * 60000 &&
+        !busyScreen()) {
+        reshuffle("automatic, after unlock");
+    }
+}
 
 // Runs at most once a second off cursor movement and window events: the
 // fallback sampler, and a watchdog that restarts the clock if a tick was lost.
