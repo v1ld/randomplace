@@ -126,6 +126,50 @@
       <default>true</default>
     </entry>
 
+    <!-- Automatic -->
+    <entry name="autoReshuffle" type="Bool">
+      <label>Reshuffle automatically while I'm idle</label>
+      <default>true</default>
+    </entry>
+    <entry name="autoReshuffleMin" type="Int">
+      <label>Reshuffle every (minutes)</label>
+      <default>45</default>
+      <min>5</min>
+      <max>1440</max>
+    </entry>
+    <entry name="autoIdleSec" type="Int">
+      <label>Only after being idle for (s)</label>
+      <default>120</default>
+      <min>10</min>
+      <max>3600</max>
+    </entry>
+    <entry name="reshuffleOnUnlock" type="Bool">
+      <label>Do a due reshuffle right after unlocking</label>
+      <default>true</default>
+    </entry>
+    <entry name="drift" type="Bool">
+      <label>Let windows drift slowly while I'm idle</label>
+      <default>true</default>
+    </entry>
+    <entry name="driftEverySec" type="Int">
+      <label>Drift step every (s)</label>
+      <default>60</default>
+      <min>10</min>
+      <max>3600</max>
+    </entry>
+    <entry name="driftPx" type="Int">
+      <label>Drift step size (px)</label>
+      <default>2</default>
+      <min>1</min>
+      <max>50</max>
+    </entry>
+    <entry name="driftIdleSec" type="Int">
+      <label>Drift only after being idle for (s)</label>
+      <default>20</default>
+      <min>10</min>
+      <max>3600</max>
+    </entry>
+
     <!-- Advanced -->
     <entry name="keepSizeOnMove" type="Bool">
       <label>Undo size changes apps make right after being moved</label>

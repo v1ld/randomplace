@@ -319,11 +319,116 @@
       </layout>
      </widget>
      <widget class="QWidget" name="tab3">
-      <attribute name="title"><string>Advanced</string></attribute>
+      <attribute name="title"><string>Automatic</string></attribute>
       <layout class="QFormLayout" name="form3">
        <property name="fieldGrowthPolicy"><enum>QFormLayout::ExpandingFieldsGrow</enum></property>
        <item row="0" column="0" colspan="2">
         <widget class="QLabel" name="intro3">
+         <property name="text"><string>Burn-in comes from the same content staying in the same place for hours. These keep the layout changing without getting in your way: nothing moves while you are using the computer, while a video plays, while a window is fullscreen, or while the screen is locked. Idle time comes from the helper (Wayland idle notification); without it these stay off.</string></property>
+         <property name="wordWrap"><bool>true</bool></property>
+        </widget>
+       </item>
+       <item row="1" column="0" colspan="2">
+        <widget class="QCheckBox" name="kcfg_autoReshuffle">
+         <property name="text"><string>Reshuffle automatically while I'm idle</string></property>
+         <property name="toolTip"><string>Reshuffle the current desktop on a schedule, but only once you are idle.</string></property>
+        </widget>
+       </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="label_autoReshuffleMin">
+         <property name="text"><string>Reshuffle every (minutes):</string></property>
+         <property name="buddy"><cstring>kcfg_autoReshuffleMin</cstring></property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <widget class="QSpinBox" name="kcfg_autoReshuffleMin">
+         <property name="toolTip"><string>45 minutes gives 8-16 different layouts in a working day; more often adds little.</string></property>
+         <property name="minimum"><number>5</number></property>
+         <property name="maximum"><number>1440</number></property>
+         <property name="suffix"><string> min</string></property>
+         <property name="value"><number>45</number></property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_autoIdleSec">
+         <property name="text"><string>Only after being idle for (s):</string></property>
+         <property name="buddy"><cstring>kcfg_autoIdleSec</cstring></property>
+        </widget>
+       </item>
+       <item row="3" column="1">
+        <widget class="QSpinBox" name="kcfg_autoIdleSec">
+         <property name="toolTip"><string>How long without keyboard or mouse input before a due reshuffle may happen.</string></property>
+         <property name="minimum"><number>10</number></property>
+         <property name="maximum"><number>3600</number></property>
+         <property name="suffix"><string> s</string></property>
+         <property name="value"><number>120</number></property>
+        </widget>
+       </item>
+       <item row="4" column="0" colspan="2">
+        <widget class="QCheckBox" name="kcfg_reshuffleOnUnlock">
+         <property name="text"><string>Do a due reshuffle right after unlocking</string></property>
+         <property name="toolTip"><string>If a reshuffle is due, do it the moment you unlock, before you start working.</string></property>
+        </widget>
+       </item>
+       <item row="5" column="0" colspan="2">
+        <widget class="QCheckBox" name="kcfg_drift">
+         <property name="text"><string>Let windows drift slowly while I'm idle</string></property>
+         <property name="toolTip"><string>Between reshuffles, move each window a couple of pixels at a time along its own slowly turning path, blurring edge lines (like the monitor's pixel shift, over a larger range).</string></property>
+        </widget>
+       </item>
+       <item row="6" column="0">
+        <widget class="QLabel" name="label_driftEverySec">
+         <property name="text"><string>Drift step every (s):</string></property>
+         <property name="buddy"><cstring>kcfg_driftEverySec</cstring></property>
+        </widget>
+       </item>
+       <item row="6" column="1">
+        <widget class="QSpinBox" name="kcfg_driftEverySec">
+         <property name="toolTip"><string>Time between drift steps.</string></property>
+         <property name="minimum"><number>10</number></property>
+         <property name="maximum"><number>3600</number></property>
+         <property name="suffix"><string> s</string></property>
+         <property name="value"><number>60</number></property>
+        </widget>
+       </item>
+       <item row="7" column="0">
+        <widget class="QLabel" name="label_driftPx">
+         <property name="text"><string>Drift step size (px):</string></property>
+         <property name="buddy"><cstring>kcfg_driftPx</cstring></property>
+        </widget>
+       </item>
+       <item row="7" column="1">
+        <widget class="QSpinBox" name="kcfg_driftPx">
+         <property name="toolTip"><string>Distance per drift step. Small steps are hard to notice.</string></property>
+         <property name="minimum"><number>1</number></property>
+         <property name="maximum"><number>50</number></property>
+         <property name="suffix"><string> px</string></property>
+         <property name="value"><number>2</number></property>
+        </widget>
+       </item>
+       <item row="8" column="0">
+        <widget class="QLabel" name="label_driftIdleSec">
+         <property name="text"><string>Drift only after being idle for (s):</string></property>
+         <property name="buddy"><cstring>kcfg_driftIdleSec</cstring></property>
+        </widget>
+       </item>
+       <item row="8" column="1">
+        <widget class="QSpinBox" name="kcfg_driftIdleSec">
+         <property name="toolTip"><string>How long without input before windows may drift.</string></property>
+         <property name="minimum"><number>10</number></property>
+         <property name="maximum"><number>3600</number></property>
+         <property name="suffix"><string> s</string></property>
+         <property name="value"><number>20</number></property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tab4">
+      <attribute name="title"><string>Advanced</string></attribute>
+      <layout class="QFormLayout" name="form4">
+       <property name="fieldGrowthPolicy"><enum>QFormLayout::ExpandingFieldsGrow</enum></property>
+       <item row="0" column="0" colspan="2">
+        <widget class="QLabel" name="intro4">
          <property name="text"><string>Settings apply at the next window placement or reshuffle.</string></property>
          <property name="wordWrap"><bool>true</bool></property>
         </widget>

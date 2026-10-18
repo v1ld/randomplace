@@ -14,6 +14,15 @@ talks to this tiny session-bus service:
     Tick(s) -> b    reply after the given number of milliseconds (100..20000):
                     the script's clock for sampling screen wear on a steady
                     schedule, even when nothing else happens on screen.
+    IdleSeconds(s timeoutMs) -> i
+                    how long the user has been idle, in seconds (0 = active),
+                    or -1 if it can't be told. Uses the Wayland
+                    ext-idle-notify-v1 protocol (KWin implements it): KWin
+                    scripts can't see keyboard input, and KDE's screen saver
+                    D-Bus idle query is unsupported on Wayland. The
+                    notification respects idle inhibitors, so while a video
+                    plays the user never counts as idle. Idle times shorter
+                    than timeoutMs read as 0.
 
 Data file: $XDG_STATE_HOME/randomplace/usage.json (default ~/.local/state/...).
 Override with RANDOMPLACE_STORE=/path/to/file (used by the tests).
@@ -24,6 +33,8 @@ without any calls it exits, and the next call simply starts it again.
 """
 import json
 import os
+import socket
+import struct
 import sys
 import tempfile
 import time
@@ -46,6 +57,7 @@ XML = """
     <method name="Load"><arg type="s" direction="out"/></method>
     <method name="Save"><arg type="s" direction="in"/></method>
     <method name="Tick"><arg type="s" direction="in"/><arg type="b" direction="out"/></method>
+    <method name="IdleSeconds"><arg type="s" direction="in"/><arg type="i" direction="out"/></method>
   </interface>
 </node>
 """
@@ -136,6 +148,201 @@ def touch():
     last_activity = time.monotonic()
 
 
+# --------------------------------------------------------------- idle watch
+#
+# A minimal Wayland client (wire protocol only, no extra packages) that asks
+# the compositor for an ext_idle_notification_v1 and listens for its idled /
+# resumed events.
+
+def _wstr(s):
+    b = s.encode("utf-8") + b"\0"
+    return struct.pack("=I", len(b)) + b + b"\0" * (-len(b) % 4)
+
+
+class IdleWatcher:
+    def __init__(self):
+        self.sock = None
+        self.state = "new"           # new -> ready | unsupported | broken
+        self.timeout_ms = 0
+        self.idled_at = None         # monotonic time of the last "idled" event
+        self.buf = b""
+        self.next_id = 2
+        self.objs = {}
+        self.globals = {}
+        self.seat = self.notifier = self.notif = None
+        self.watch = None
+        self.retry_at = 0
+
+    # -- wire helpers
+    def _new(self, iface):
+        i = self.next_id
+        self.next_id += 1
+        self.objs[i] = iface
+        return i
+
+    def _send(self, obj, opcode, payload=b""):
+        self.sock.sendall(struct.pack("=II", obj, ((8 + len(payload)) << 16) | opcode) + payload)
+
+    def _messages(self):
+        while len(self.buf) >= 8:
+            obj, so = struct.unpack_from("=II", self.buf)
+            size, opcode = so >> 16, so & 0xFFFF
+            if size < 8 or len(self.buf) < size:
+                if size < 8:
+                    raise ValueError("bad message size")
+                return
+            payload = self.buf[8:size]
+            self.buf = self.buf[size:]
+            yield obj, opcode, payload
+
+    @staticmethod
+    def _str(payload, off):
+        n = struct.unpack_from("=I", payload, off)[0]
+        s = payload[off + 4:off + 4 + max(0, n - 1)].decode("utf-8", "replace")
+        return s, off + 4 + n + (-n % 4)
+
+    def _handle(self, obj, opcode, payload):
+        iface = self.objs.get(obj)
+        if obj == 1 and opcode == 0:                      # wl_display.error
+            _, code = struct.unpack_from("=II", payload)
+            msg, _ = self._str(payload, 8)
+            raise RuntimeError("Wayland error %d: %s" % (code, msg))
+        if iface == "wl_registry" and opcode == 0:        # global(name, interface, version)
+            name = struct.unpack_from("=I", payload)[0]
+            ifname, off = self._str(payload, 4)
+            version = struct.unpack_from("=I", payload, off)[0]
+            self.globals[ifname] = (name, version)
+        elif iface == "wl_callback" and opcode == 0:      # done
+            self.objs[obj] = "wl_callback(done)"
+        elif iface == "ext_idle_notification_v1" and obj == self.notif:
+            if opcode == 0:
+                self.idled_at = time.monotonic()
+            elif opcode == 1:
+                self.idled_at = None
+
+    def _read_blocking(self, until_done_id, deadline):
+        while self.objs.get(until_done_id) != "wl_callback(done)":
+            self.sock.settimeout(max(0.05, deadline - time.monotonic()))
+            data = self.sock.recv(65536)
+            if not data:
+                raise ConnectionError("compositor closed the connection")
+            self.buf += data
+            for m in list(self._messages()):
+                self._handle(*m)
+
+    def _socket_paths(self):
+        rt = os.environ.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid()
+        disp = os.environ.get("WAYLAND_DISPLAY")
+        names = [disp] if disp else []
+        try:
+            names += sorted(f for f in os.listdir(rt) if f.startswith("wayland-") and not f.endswith(".lock"))
+        except OSError:
+            pass
+        seen = []
+        for n in names:
+            p = n if os.path.isabs(n) else os.path.join(rt, n)
+            if p not in seen:
+                seen.append(p)
+        return seen
+
+    def _connect(self):
+        last = None
+        for path in self._socket_paths():
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                s.connect(path)
+                return s
+            except OSError as e:
+                s.close()
+                last = e
+        raise ConnectionError("no Wayland socket (%s)" % last)
+
+    def _setup(self):
+        self.sock = self._connect()
+        reg = self._new("wl_registry")
+        self._send(1, 1, struct.pack("=I", reg))               # wl_display.get_registry
+        cb = self._new("wl_callback")
+        self._send(1, 0, struct.pack("=I", cb))                # wl_display.sync
+        self._read_blocking(cb, time.monotonic() + 2.0)
+        if "ext_idle_notifier_v1" not in self.globals or "wl_seat" not in self.globals:
+            self.state = "unsupported"
+            self.sock.close()
+            self.sock = None
+            return
+        for ifname, attr in (("wl_seat", "seat"), ("ext_idle_notifier_v1", "notifier")):
+            name, _ = self.globals[ifname]
+            oid = self._new(ifname)
+            self._send(reg, 0, struct.pack("=I", name) + _wstr(ifname) + struct.pack("=II", 1, oid))
+            setattr(self, attr, oid)
+        self.sock.setblocking(False)
+        self.watch = GLib.io_add_watch(self.sock.fileno(), GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, self._on_io)
+        self.state = "ready"
+
+    def _make_notification(self, timeout_ms):
+        if self.notif is not None:
+            self._send(self.notif, 0)                          # ext_idle_notification_v1.destroy
+        self.notif = self._new("ext_idle_notification_v1")
+        self.idled_at = None
+        self.timeout_ms = timeout_ms
+        # ext_idle_notifier_v1.get_idle_notification(id, timeout, seat): respects inhibitors
+        self._send(self.notifier, 1, struct.pack("=III", self.notif, timeout_ms, self.seat))
+
+    def _on_io(self, fd, cond):
+        try:
+            if cond & (GLib.IO_HUP | GLib.IO_ERR):
+                raise ConnectionError("connection lost")
+            while True:
+                try:
+                    data = self.sock.recv(65536)
+                except BlockingIOError:
+                    break
+                if not data:
+                    raise ConnectionError("compositor closed the connection")
+                self.buf += data
+            for m in list(self._messages()):
+                self._handle(*m)
+            return True
+        except Exception as e:                                 # reconnect later
+            print("randomplace-store: idle watch: %s" % e, file=sys.stderr)
+            self._reset("broken")
+            return False
+
+    def _reset(self, state):
+        try:
+            if self.sock:
+                self.sock.close()
+        except OSError:
+            pass
+        self.__init__()
+        self.state = state
+        self.retry_at = time.monotonic() + 30
+
+    def idle_seconds(self, timeout_ms):
+        if self.state in ("unsupported",):
+            return -1
+        if self.state == "broken" and time.monotonic() < self.retry_at:
+            return -1
+        try:
+            if self.state != "ready":
+                self._reset("new")
+                self._setup()
+                if self.state != "ready":
+                    return -1
+            timeout_ms = max(1000, min(3600000, int(timeout_ms)))
+            if self.notif is None or timeout_ms != self.timeout_ms:
+                self._make_notification(timeout_ms)
+            if self.idled_at is None:
+                return 0
+            return int(self.timeout_ms / 1000 + time.monotonic() - self.idled_at)
+        except Exception as e:
+            print("randomplace-store: idle watch: %s" % e, file=sys.stderr)
+            self._reset("broken")
+            return -1
+
+
+idle_watch = IdleWatcher()
+
+
 def on_method_call(conn, sender, obj_path, iface, method, params, invocation):
     touch()
     try:
@@ -156,6 +363,12 @@ def on_method_call(conn, sender, obj_path, iface, method, params, invocation):
                 invocation.return_value(GLib.Variant("(b)", (True,)))
                 return False
             GLib.timeout_add(ms, reply)
+        elif method == "IdleSeconds":
+            try:
+                ms = int(float(params.unpack()[0]))
+            except ValueError:
+                ms = 20000
+            invocation.return_value(GLib.Variant("(i)", (idle_watch.idle_seconds(ms),)))
         else:
             invocation.return_dbus_error(ERR + "UnknownMethod", method)
     except Unreadable as e:

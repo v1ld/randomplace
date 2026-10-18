@@ -80,6 +80,18 @@ function readSettings() { return {
     keepDialogsWithParent: bool("keepDialogsWithParent", true),
     // Undo size changes an app makes on its own right after being moved.
     keepSizeOnMove: bool("keepSizeOnMove", true),
+    // Automatic reshuffle: every autoReshuffleMin minutes, but only once you
+    // have been idle for autoIdleSec (or right after unlocking, if due).
+    autoReshuffle: bool("autoReshuffle", true),
+    autoReshuffleMin: Math.max(5, Math.round(num("autoReshuffleMin", 45))),
+    autoIdleSec: Math.max(10, Math.round(num("autoIdleSec", 120))),
+    reshuffleOnUnlock: bool("reshuffleOnUnlock", true),
+    // Drift: every driftEverySec, while idle for driftIdleSec, each window
+    // moves driftPx pixels along its own slowly turning direction.
+    drift: bool("drift", true),
+    driftEverySec: Math.max(10, Math.round(num("driftEverySec", 60))),
+    driftPx: Math.max(1, Math.round(num("driftPx", 2))),
+    driftIdleSec: Math.max(10, Math.round(num("driftIdleSec", 20))),
     excludeClasses: String(readConfig("excludeClasses",
         "krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge," +
         "org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter"))
@@ -98,6 +110,7 @@ const STORE = {
 function say(msg) { print("randomplace: " + msg); }
 // Only printed when debug=true.
 function log(msg) { if (CFG.debug) say(msg); }
+const logOuter = log;
 
 // Run fn; report any exception instead of failing silently inside KWin.
 function guard(name, fn) {
@@ -1307,12 +1320,13 @@ function describeGeom(w) {
     return s;
 }
 
-function moveTo(w, x, y) {
+function moveTo(w, x, y, quiet) {
     if (!isFinite(x) || !isFinite(y)) {
         say("refusing to move '" + w.caption + "' to " + x + "," + y);
         return false;
     }
-    if (CFG.debug) log("move '" + w.caption + "' (" + appKey(w) + (w.windowId ? ", X11 id " + w.windowId : "") +
+    const log = quiet ? function () {} : logOuter;
+    if (CFG.debug && !quiet) log("move '" + w.caption + "' (" + appKey(w) + (w.windowId ? ", X11 id " + w.windowId : "") +
                        ") to " + x + "," + y + "; before: " + describeGeom(w));
     const g = w.frameGeometry;     // copy, modify, assign back
     const x0 = g.x, y0 = g.y, w0 = g.width, h0 = g.height;
@@ -1449,9 +1463,10 @@ function whenSized(w, fn) {
 
 // ------------------------------------------------------------- reshuffle
 
-const reshuffle = guard("reshuffle", function () {
+const reshuffle = guard("reshuffle", function (why) {
     loadConfig();
-    say("reshuffle triggered");
+    lastReshuffleAt = Date.now();
+    say("reshuffle triggered (" + (why || "shortcut") + ")");
     sampleWear(Date.now(), true);         // book the time the old layout was shown
     const desktop = workspace.currentDesktop;
     const outputs = allOutputs();
@@ -1703,14 +1718,144 @@ function onTick() {
                 credit(t);
                 screenLocked = locked;
                 log("screen " + (locked ? "locked: not counting" : "unlocked: counting again"));
+                if (!locked) onUnlock(t);
             }));
     } catch (e) { /* no screen saver service: assume unlocked */ }
     sampleWear(now, true);
     credit(now);
     if (!storeLoaded) tryLoad(now);
     else maybeSave(now, false);
+    requestIdle();
+    autoActions(now);
     requestTick(now);
 }
+
+// ------------------------------------------------------- automatic actions
+//
+// Why: burn-in comes from the same content staying in the same place for
+// many hours. The wear map can only spread wear if layouts change, and a
+// layout left alone for a whole day concentrates border and title-bar wear
+// on a few lines. So the layout is reshuffled every autoReshuffleMin minutes
+// (default 45: 8-16 layouts in a working day; more often adds little and
+// disturbs more), but only when you are idle, so windows never jump while
+// you work; a reshuffle that is due also happens right after unlocking.
+// Between reshuffles, windows drift a couple of pixels at a time while you
+// are idle, blurring edge lines like the monitor's own pixel shift but over a
+// larger range.
+//
+// Idle time comes from the helper (Wayland ext-idle-notify, which also counts
+// a playing video as activity). Without it, nothing automatic happens.
+
+let idleSec = -1;            // latest reading; -1 = unknown
+let idleReadAt = 0;
+let warnedNoIdle = false;
+let lastReshuffleAt = Date.now();
+let lastDriftAt = Date.now();
+const driftDir = new Map();  // window id -> direction (radians)
+
+function autoWanted() { return CFG.autoReshuffle || CFG.drift; }
+
+function requestIdle() {
+    if (!autoWanted() || !CFG.persist) return;
+    const secs = Math.min(CFG.autoReshuffle ? CFG.autoIdleSec : 1e9, CFG.drift ? CFG.driftIdleSec : 1e9);
+    callDBus(STORE.service, STORE.path, STORE.iface, "IdleSeconds", String(secs * 1000),
+        guard("idle", function (v) {
+            const s = Number((v && v.length !== undefined && typeof v !== "string") ? v[0] : v);
+            idleSec = isFinite(s) ? s : -1;
+            idleReadAt = Date.now();
+            if (idleSec < 0 && !warnedNoIdle) {
+                warnedNoIdle = true;
+                say("idle time is not available (no Wayland idle-notify support?); automatic reshuffle and drift are off");
+            }
+        }));
+}
+
+function idleFor(now) {
+    // a reading older than three ticks is stale
+    if (idleSec < 0 || now - idleReadAt > 3 * CFG.wearSampleSec * 1000 + 2000) return -1;
+    return idleSec;
+}
+
+// Something on screen that must not be disturbed: a fullscreen window (game,
+// video) or a window being dragged or resized.
+function busyScreen() {
+    const desktop = workspace.currentDesktop, activity = workspace.currentActivity;
+    return allWindows().some(function (w) {
+        if (w.deleted || w.minimized || !onDesktop(w, desktop) || !onActivity(w, activity)) return false;
+        return w.fullScreen || w.move || w.resize;
+    });
+}
+
+function autoActions(now) {
+    if (!autoWanted() || screenLocked) return;
+    const idle = idleFor(now);
+    if (idle < 0) return;
+    if (CFG.autoReshuffle && idle >= CFG.autoIdleSec &&
+        now - lastReshuffleAt >= CFG.autoReshuffleMin * 60000 && !busyScreen()) {
+        reshuffle("automatic, idle " + Math.round(idle) + " s");
+        lastDriftAt = Date.now();
+        return;
+    }
+    if (CFG.drift && idle >= CFG.driftIdleSec && now - lastDriftAt >= CFG.driftEverySec * 1000 && !busyScreen()) {
+        lastDriftAt = now;
+        driftStep();
+    }
+}
+
+function onUnlock(now) {
+    if (CFG.autoReshuffle && CFG.reshuffleOnUnlock && now - lastReshuffleAt >= CFG.autoReshuffleMin * 60000 &&
+        !busyScreen()) {
+        reshuffle("automatic, after unlock");
+    }
+}
+
+// Move every movable window a few pixels along its own direction, turning
+// gently; bounce off the screen edges; never into new overlap.
+const driftStep = guard("drift", function () {
+    loadConfig();
+    const desktop = workspace.currentDesktop, activity = workspace.currentActivity;
+    const z = stackIndex();
+    const none = new Map();
+    let total = 0;
+    sampleWear(Date.now(), true);
+    allOutputs().forEach(function (output) {
+        const area = usableArea(null, output, desktop);
+        const items = [];
+        visibleOn(output, desktop, activity, null).forEach(function (w) {
+            if (fillsArea(w, area)) return;
+            if (CFG.keepDialogsWithParent && isChild(w)) return;
+            trackMaximize(w);
+            const movable = whyNot(w) === "" && maximizedReason(w, output, desktop, area) === "";
+            items.push(itemFor(w, z.get(wid(w)) || 0, none, movable));
+        });
+        const moved = new Map();
+        items.forEach(function (it) {
+            if (!it.movable) return;
+            const id = wid(it.w);
+            let a = driftDir.has(id) ? driftDir.get(id) : Math.random() * 2 * Math.PI;
+            const b = bounds(it, area);
+            let nx = Math.round(it.x + Math.cos(a) * CFG.driftPx);
+            let ny = Math.round(it.y + Math.sin(a) * CFG.driftPx);
+            if (nx < b.lx || nx > b.hx) { a = Math.PI - a; nx = Math.round(clamp(it.x + Math.cos(a) * CFG.driftPx, b.lx, b.hx)); }
+            if (ny < b.ly || ny > b.hy) { a = -a; ny = Math.round(clamp(it.y + Math.sin(a) * CFG.driftPx, b.ly, b.hy)); }
+            if ((nx === it.x && ny === it.y) ||
+                pairCost(it, nx, ny, items) > pairCost(it, it.x, it.y, items) + EPS) {
+                driftDir.set(id, Math.random() * 2 * Math.PI);        // blocked: try another way next time
+                return;
+            }
+            driftDir.set(id, a + (Math.random() - 0.5) * 0.5);        // turn gently
+            const dx = nx - it.x, dy = ny - it.y;
+            if (moveTo(it.w, nx, ny, true)) {
+                it.x = nx; it.y = ny;
+                moved.set(id, { dx: dx, dy: dy });
+                total++;
+            }
+        });
+        moveDialogsWith(moved, area);
+    });
+    sampleWear(Date.now(), true);
+    if (total) log("drift: moved " + total + " window(s) by " + CFG.driftPx + " px");
+});
 
 // Runs at most once a second off cursor movement and window events: the
 // fallback sampler, and a watchdog that restarts the clock if a tick was lost.
@@ -1793,7 +1938,7 @@ registerShortcut(
     "RandomPlace Reshuffle",
     "RandomPlace: Reshuffle windows",
     "Meta+Ctrl+Shift+R",
-    reshuffle
+    function () { reshuffle("shortcut"); }
 );
 
 sampleWear(Date.now(), true);

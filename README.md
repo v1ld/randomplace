@@ -6,6 +6,7 @@ RandomPlace is a KWin script for OLED screens. Window borders and title bars are
 - **Wear map.** For each screen, and across logins, RandomPlace records how long window borders and title bars have been visible on each part of the screen. New positions are steered towards areas that have been used less.
 - **Usage-aware.** When windows must overlap, the ones you use least get covered. Usage is remembered per app across logins.
 - **Reshuffle on demand.** `Meta+Ctrl+Shift+R` re-places every movable window on the current desktop.
+- **Automatic, while you're away from the keyboard.** Every 45 minutes the layout is reshuffled, but only once you've been idle for 2 minutes, or right after you unlock. Between reshuffles, windows drift a couple of pixels at a time while you're idle. Nothing moves while you work, while a video plays, while a window is fullscreen, or while the screen is locked.
 - **Separate layouts.** Each virtual desktop, Activity and screen is handled on its own.
 - **Dialogs stay over their parent.** On a reshuffle, dialogs move together with the window they belong to. Dialogs that don't declare a parent, such as the file Open/Save dialogs drawn by the desktop portal, are centered over the window that opened them.
 - **Settings page** in System Settings → Window Management → KWin Scripts → RandomPlace (configure button).
@@ -65,6 +66,15 @@ Changes apply at the next window placement or reshuffle, with no reload needed.
 | `persist` | true | Use the helper to remember usage and wear across logins, and as a clock. When off, no D-Bus calls are made. |
 | `saveIntervalSec` | 120 | Minimum time between saves. |
 | `maxApps` | 200 | Apps remembered. |
+| **Automatic** | | |
+| `autoReshuffle` | true | Reshuffle the current desktop on a schedule, but only while you're idle. |
+| `autoReshuffleMin` | 45 | Minutes between automatic reshuffles. |
+| `autoIdleSec` | 120 | Seconds without keyboard or mouse input before a due reshuffle may happen. |
+| `reshuffleOnUnlock` | true | If a reshuffle is due, do it as soon as you unlock. |
+| `drift` | true | Between reshuffles, move windows a few pixels at a time while you're idle. |
+| `driftEverySec` | 60 | Seconds between drift steps. |
+| `driftPx` | 2 | Pixels per drift step. |
+| `driftIdleSec` | 20 | Seconds without input before windows may drift. |
 | **Advanced** | | |
 | `keepSizeOnMove` | true | Some apps, such as Steam under XWayland with display scaling, resize themselves when moved. For 5 seconds after the script moves a window, a size change the app makes on its own (including one during the move itself) is undone, at most twice. Resizing a window yourself is never affected. |
 | `excludeClasses` | krunner,plasmashell,… | Comma-separated window classes that are never moved. |
@@ -89,6 +99,17 @@ Positions are chosen at random, with probability proportional to `exp(−cost / 
 - **Reshuffle:** several independent searches run within the time budget. Each one places windows one by one (more-used windows tend to go first), then refines the layout with random moves while gradually lowering the temperature (simulated annealing). One of the resulting layouts is chosen, again by a Boltzmann choice. Finally, each window drifts to a random spot within the free space around it. The budget is checked during the search, not just between searches.
 - **Never snapped to screen edges.** Positions that would leave the screen are discarded rather than clamped. Clamping is what piles windows up against the screen edges.
 
+### Automatic reshuffle and drift
+
+**Why they exist.** Burn-in comes from the same content staying in the same place for many hours. The wear map can only spread wear if layouts actually change. With manual reshuffles only, a layout you leave alone for a whole working day concentrates its border and title-bar wear on a few lines. Two mechanisms keep the layout changing without getting in your way:
+
+- **Automatic reshuffle, every 45 minutes by default.** That gives 8–16 different layouts in an 8-hour day, which is enough for the wear map to work with. The simulation in the burn-in analysis changed layouts every 5 minutes, but reshuffling more often than every half hour or so adds little and is more disruptive. This interval is a reasoned judgment, not a measured optimum. A reshuffle only happens once you've been idle for `autoIdleSec` (2 minutes), so windows never jump while you're working. A reshuffle that is due also happens the moment you unlock, before you start working again.
+- **Drift.** Between reshuffles, while you're idle, each window moves `driftPx` (2) pixels every `driftEverySec` (60 s) along its own slowly turning path. It bounces off the screen edges and never moves into new overlap, and its dialogs move with it. Over an idle half hour a window wanders about 50–60 px. This blurs the window's edge lines the way the monitor's own pixel shift does (one pixel every three minutes on Alienware OLEDs), but over a larger range.
+
+**When nothing moves:** while you type or use the mouse, while a video plays, while any window on the current desktop is fullscreen, while a window is being dragged or resized, and while the screen is locked.
+
+**How idle time is measured.** On Wayland, KWin scripts can't see keyboard input, and KDE's screen-saver D-Bus call for idle time is not supported there. So the helper asks KWin directly, using the standard Wayland *ext-idle-notify-v1* protocol. It does this with a small built-in client, so no extra packages are needed. That protocol respects idle inhibitors, so a playing video counts as activity. Without the helper, or if the compositor doesn't offer the protocol, automatic reshuffle and drift stay off, and the log says so once.
+
 ### Dialogs
 
 - **Dialogs that name their parent:** KWin already places them over the parent, and the script never moves dialogs on its own. On a reshuffle, each dialog (and any dialog of that dialog) moves by the same amount as its parent, so it stays exactly where it was relative to it. If that would push it off-screen, it is kept on screen instead.
@@ -109,6 +130,7 @@ KWin scripts can read settings, but they cannot write files and have no timers. 
 
 - **`Load` / `Save`:** keeps `~/.local/state/randomplace/usage.json`, written atomically with mode 600.
 - **`Tick`:** replies after `wearSampleSec`. This is the script's clock.
+- **`IdleSeconds`:** how long you've been idle, via the Wayland ext-idle-notify protocol. Used by automatic reshuffle and drift.
 
 D-Bus starts the helper on demand. Because the clock keeps calling it, it stays running while the script is active: a small idle Python process that wakes every few seconds. It exits 10 minutes after the last call, for example when the script is disabled.
 
@@ -341,3 +363,27 @@ A window ends up flush now mostly when there's genuinely no room elsewhere.
 ### Caveat
 
 These numbers come from a simulated model of use. Once v1.4 has been running for a while, `wear-report.py` prints the same peak/mean and variation figures for your actual screen. They will run higher at first, until enough history accumulates. They also cover a little less than the simulation: the script's wear map ignores window interiors and uses `wearCell` (20 px) cells rather than 8 px.
+
+## Other burn-in measures (outside this script)
+
+These recommendations came out of working on RandomPlace, for an Alienware AW3926QW (LG RGB-stripe OLED, three-year warranty that includes burn-in). Already in place: no fixed elements on screen (taskbars hidden), a black desktop background, a black lock screen, the monitor suspending a minute after lock, and pixel refresh allowed to run.
+
+- **Keep the background black, and don't use a rotating wallpaper.** A black OLED pixel is switched off and doesn't wear at all. A rotating wallpaper wouldn't cancel window-border wear. It would only add wear wherever the wallpaper shows, aging the whole panel faster to get a slightly more even result. The same goes for the lock screen.
+- **Keep brightness moderate. This is the biggest remaining factor.** OLED wear rises steeply with how bright the pixels are driven. The panel's 1,300-nit peak is for HDR highlights. For desktop work, use what is comfortable for the room. With HDR on in Plasma, keep "SDR brightness" moderate, because it sets how bright ordinary windows are.
+- **Use dark themes everywhere:** Breeze Dark for Plasma and KDE apps, and dark mode in the browser, Steam and other apps. Fewer lit pixels means less wear.
+- **Dim inactive windows.** In System Settings → Desktop Effects, turn on "Dim Inactive". It darkens every window you aren't using, which on a large screen is most of what's visible.
+- **Turn the screen off when idle, not only on lock.** In Power Management, dim after a few minutes and turn the screen off after about 5–10 minutes. That covers walking away without locking.
+- **Fullscreen games and video:** HUDs are the classic burn-in source, and this script can't move fullscreen windows. Lower in-game brightness or HUD opacity where possible, and vary what you play.
+- **Leave the monitor on standby power.** Don't cut it at the wall, so the pixel refresh can run after use.
+- **Turn on pixel shift** if the monitor's menu offers it.
+- **Register the monitor and keep the receipt** for the burn-in warranty.
+
+## Version history
+
+- **2.0:** idle-aware automatic reshuffle and drift (helper gains Wayland idle detection); new Automatic settings tab; metadata.json author field and file mode 0666.
+- **1.4.4:** corrected the size-restore log message (it printed the restored size twice).
+- **1.4.3:** maximized and snapped windows are left alone; size guard widened to 5 s and also catches changes during the move (fixed Steam resizing itself on reshuffle).
+- **1.4.2:** size guard for apps that resize themselves when moved.
+- **1.4.1:** dialogs stay over their parent window.
+- **1.4:** wear map, randomness-first placement, settings page, store safety fixes from an independent review.
+- **1.3:** per-app usage remembered across logins (helper service).
