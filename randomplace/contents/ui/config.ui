@@ -331,7 +331,7 @@
        <item row="1" column="0" colspan="2">
         <widget class="QCheckBox" name="kcfg_keepSizeOnMove">
          <property name="text"><string>Undo size changes apps make right after being moved</string></property>
-         <property name="toolTip"><string>Some apps (e.g. Steam under XWayland with display scaling) resize themselves when moved. For 2 seconds after a move, such a size change is undone (at most twice). Resizing a window yourself is never affected.</string></property>
+         <property name="toolTip"><string>Some apps (e.g. Steam under XWayland with display scaling) resize themselves when moved. For 5 seconds after a move, such a size change is undone (at most twice). Resizing a window yourself is never affected.</string></property>
         </widget>
        </item>
        <item row="2" column="0">

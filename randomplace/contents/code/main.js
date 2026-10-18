@@ -387,6 +387,56 @@ function fillsArea(w, area) {
     return g.width >= area.width - 2 && g.height >= area.height - 2;
 }
 
+// ------------------------------------------------- maximized / snapped windows
+//
+// Moving a maximized (fully, vertically or horizontally) or snapped window
+// makes KWin restore its earlier size, so such windows are left alone.
+// KWin doesn't expose the maximize state as a property, so it is tracked from
+// the maximizedAboutToChange(mode) signal (mode: 0 none, 1 vertical,
+// 2 horizontal, 3 both), and also recognized from the geometry, which covers
+// windows that were already maximized when the script started.
+
+const maxMode = new Map();       // window id -> last known maximize mode
+const maxTracked = {};
+
+function trackMaximize(w) {
+    if (!w || maxTracked[wid(w)]) return;
+    try {
+        w.maximizedAboutToChange.connect(function (mode) {
+            maxMode.set(wid(w), Number(mode) || 0);
+            log("'" + w.caption + "' maximize mode -> " + Number(mode));
+        });
+        maxTracked[wid(w)] = true;
+    } catch (e) { /* signal not available */ }
+}
+
+function maximizeArea(output, desktop, area) {
+    let m = null;
+    try { m = workspace.clientArea(KWin.MaximizeArea !== undefined ? KWin.MaximizeArea : KWin.PlacementArea, output, desktop); }
+    catch (e) { m = null; }
+    return goodRect(m) ? m : area;
+}
+
+// Non-empty reason if `w` is maximized or snapped (so it must not be moved).
+function maximizedReason(w, output, desktop, area) {
+    const mode = maxMode.get(wid(w));
+    if (mode) return "maximized" + (mode === 1 ? " vertically" : mode === 2 ? " horizontally" : "");
+    if (w.tile) return "snapped/tiled";
+    const m = maximizeArea(output, desktop, area);
+    const g = w.frameGeometry;
+    const near = function (a, b) { return Math.abs(a - b) < 2.5; };
+    const fullW = near(g.x, m.x) && near(g.width, m.width);
+    const fullH = near(g.y, m.y) && near(g.height, m.height);
+    if (fullW && fullH) return "maximized";
+    if (fullH) return "maximized vertically or snapped to a side";
+    if (fullW) return "maximized horizontally or snapped to top/bottom";
+    const halfW = near(g.width, m.width / 2), halfH = near(g.height, m.height / 2);
+    const atX = near(g.x, m.x) || near(g.x + g.width, m.x + m.width);
+    const atY = near(g.y, m.y) || near(g.y + g.height, m.y + m.height);
+    if (halfW && halfH && atX && atY) return "snapped to a quarter";
+    return "";
+}
+
 // Visible windows on this output + desktop + activity (each virtual desktop,
 // activity and screen is laid out on its own).
 function visibleOn(output, desktop, activity, exclude) {
@@ -1197,7 +1247,7 @@ function applied(w, x, y) {
 // a size change the app makes on its own is undone, at most twice, so the
 // script never fights an app for long. Resizes you make yourself (dragging a
 // window edge) are never touched.
-const SIZE_GUARD_MS = 2000;
+const SIZE_GUARD_MS = 5000;
 const SIZE_GUARD_MAX = 2;
 const sizeGuards = new Map();       // window id -> guard
 const warnedResizers = {};
@@ -1214,8 +1264,10 @@ function guardSize(w, width, height) {
             if (sizeGuards.get(id) === gd) sizeGuards.delete(id);
         };
         if (w.deleted || Date.now() > gd.until || gd.restores >= SIZE_GUARD_MAX) { done(); return; }
-        if (gd.restoring || w.move || w.resize || w.fullScreen || w.minimized) return;   // user action / ours
         const g = w.frameGeometry;
+        log("  geometry of '" + w.caption + "' changed " + (Date.now() - gd.until + SIZE_GUARD_MS) +
+            " ms after move: " + describeGeom(w) + (w.move || w.resize ? " (user move/resize)" : ""));
+        if (gd.restoring || w.move || w.resize || w.fullScreen || w.minimized) return;   // user action / ours
         if (Math.abs(g.width - gd.width) < 1.5 && Math.abs(g.height - gd.height) < 1.5) return;
         gd.restores++;
         gd.restoring = true;
@@ -1235,24 +1287,77 @@ function guardSize(w, width, height) {
     w.frameGeometryChanged.connect(gd.handler);
 }
 
+function fmtRect(r) {
+    return r ? (+r.x).toFixed(1) + "," + (+r.y).toFixed(1) + " " + (+r.width).toFixed(1) + "x" + (+r.height).toFixed(1) : "-";
+}
+function describeGeom(w) {
+    let s = "frame " + fmtRect(w.frameGeometry);
+    try { if (w.clientGeometry) s += ", client " + fmtRect(w.clientGeometry); } catch (e) { /* n/a */ }
+    try { if (w.minSize) s += ", min " + (+w.minSize.width).toFixed(0) + "x" + (+w.minSize.height).toFixed(0); } catch (e) { /* n/a */ }
+    try { if (w.maxSize) s += ", max " + (+w.maxSize.width).toFixed(0) + "x" + (+w.maxSize.height).toFixed(0); } catch (e) { /* n/a */ }
+    return s;
+}
+
 function moveTo(w, x, y) {
     if (!isFinite(x) || !isFinite(y)) {
         say("refusing to move '" + w.caption + "' to " + x + "," + y);
         return false;
     }
+    if (CFG.debug) log("move '" + w.caption + "' (" + appKey(w) + (w.windowId ? ", X11 id " + w.windowId : "") +
+                       ") to " + x + "," + y + "; before: " + describeGeom(w));
     const g = w.frameGeometry;     // copy, modify, assign back
-    const w0 = g.width, h0 = g.height;
+    const x0 = g.x, y0 = g.y, w0 = g.width, h0 = g.height;
+    // Watch for KWin un-maximizing the window because of this move.
+    let unmaximized = false;
+    const onMax = function (mode) { if (!Number(mode)) unmaximized = true; };
+    let watching = false;
+    try { w.maximizedAboutToChange.connect(onMax); watching = true; } catch (e) { /* n/a */ }
     g.x = x;
     g.y = y;
     w.frameGeometry = g;
     let how = "rect copy";
-    if (!applied(w, x, y)) {
+    if (!unmaximized && !applied(w, x, y)) {
         w.frameGeometry = { x: x, y: y, width: w0, height: h0 };
         how = "plain object";
     }
+    if (watching) { try { w.maximizedAboutToChange.disconnect(onMax); } catch (e) { /* n/a */ } }
+    if (unmaximized) {
+        // It was maximized after all: put it back and leave it alone from now on.
+        const prev = maxMode.get(wid(w));
+        let mode = prev || 3;
+        if (!prev) {
+            const out = w.output, ds = w.desktops || [];
+            let area = null;
+            try { area = usableArea(w, out, ds.length ? ds[0] : workspace.currentDesktop, true); } catch (e) { /* n/a */ }
+            const m = area ? maximizeArea(out, ds.length ? ds[0] : workspace.currentDesktop, area) : null;
+            if (m) {
+                const fullH = Math.abs(h0 - m.height) < 2.5, fullW = Math.abs(w0 - m.width) < 2.5;
+                mode = fullH && !fullW ? 1 : fullW && !fullH ? 2 : 3;
+            }
+        }
+        try {
+            w.setMaximize(!!(mode & 1), !!(mode & 2));
+        } catch (e) {
+            w.frameGeometry = { x: x0, y: y0, width: w0, height: h0 };
+        }
+        maxMode.set(wid(w), mode);
+        say("'" + w.caption + "' (" + appKey(w) + ") was maximized; the move un-maximized it, so it was " +
+            "re-maximized and will be left in place");
+        return false;
+    }
     const a = w.frameGeometry;
     if (applied(w, x, y)) {
-        log("moved '" + w.caption + "' to " + x + "," + y + " via " + how);
+        // the size may already have changed during the move itself
+        if (CFG.keepSizeOnMove && (Math.abs(a.width - w0) >= 1.5 || Math.abs(a.height - h0) >= 1.5)) {
+            log("  size changed during the move (" + fmtRect(a) + "); restoring " + w0 + "x" + h0);
+            w.frameGeometry = { x: x, y: y, width: w0, height: h0 };
+            const b = w.frameGeometry;
+            if (Math.abs(b.width - w0) >= 1.5 || Math.abs(b.height - h0) >= 1.5) {
+                say("'" + w.caption + "' (" + appKey(w) + ") changes size when moved and KWin keeps the new size (" +
+                    fmtRect(b) + "); add '" + appKey(w) + "' to excludeClasses if this is unwanted");
+            }
+        }
+        log("moved '" + w.caption + "' to " + x + "," + y + " via " + how + "; after: " + describeGeom(w));
         guardSize(w, w0, h0);
         return true;
     }
@@ -1289,6 +1394,9 @@ const placeNew = guard("placeNew", function (w) {
     const desktop = ds.length ? ds[0] : workspace.currentDesktop;
     const area = usableArea(w, output, desktop);
     if (fillsArea(w, area)) { log("skip '" + w.caption + "': fills area"); return; }
+    trackMaximize(w);
+    const mr = maximizedReason(w, output, desktop, area);
+    if (mr) { log("skip '" + w.caption + "': " + mr); return; }
 
     const now = Date.now();
     sampleWear(now, true);
@@ -1367,7 +1475,8 @@ const reshuffle = guard("reshuffle", function () {
             if (fillsArea(w, area)) { log("reshuffle skips '" + w.caption + "': fills area"); return; }
             // dialogs aren't laid out on their own: they follow their parent below
             if (CFG.keepDialogsWithParent && isChild(w)) return;
-            const reason = whyNot(w);
+            trackMaximize(w);
+            const reason = whyNot(w) || maximizedReason(w, output, desktop, area);
             if (reason) log("reshuffle keeps '" + w.caption + "' fixed: " + reason);
             items.push(itemFor(w, z.get(wid(w)) || 0, usage, reason === ""));
         });
@@ -1613,12 +1722,14 @@ function heartbeat() {
 
 // ---------------------------------------------------------------- wiring
 
+allWindows().forEach(trackMaximize);
 workspace.windowActivated.connect(guard("onActivated", onActivated));
 onActivated(workspace.activeWindow);
 
 workspace.windowAdded.connect(guard("windowAdded", function (w) {
     heartbeat();
     loadConfig();
+    trackMaximize(w);
     // A dialog that doesn't name its parent: put it over the window it belongs to.
     // (Dialogs that do name one are placed over it by KWin, and left alone.)
     if (CFG.keepDialogsWithParent && isOrphanDialog(w) && !w.fullScreen) {
@@ -1639,6 +1750,8 @@ workspace.windowRemoved.connect(guard("windowRemoved", function (w) {
     }
     winLast.delete(wid(w));
     dialogParent.delete(wid(w));
+    maxMode.delete(wid(w));
+    delete maxTracked[wid(w)];
     try { sampleWear(now, true); } catch (e) { say("ERROR in wear sample: " + e); }
     maybeSave(now, false);
 }));

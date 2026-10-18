@@ -66,7 +66,7 @@ Changes apply at the next window placement or reshuffle, with no reload needed.
 | `saveIntervalSec` | 120 | Minimum time between saves. |
 | `maxApps` | 200 | Apps remembered. |
 | **Advanced** | | |
-| `keepSizeOnMove` | true | Some apps, such as Steam under XWayland with display scaling, resize themselves when moved. For 2 seconds after the script moves a window, a size change the app makes on its own is undone, at most twice. Resizing a window yourself is never affected. |
+| `keepSizeOnMove` | true | Some apps, such as Steam under XWayland with display scaling, resize themselves when moved. For 5 seconds after the script moves a window, a size change the app makes on its own (including one during the move itself) is undone, at most twice. Resizing a window yourself is never affected. |
 | `excludeClasses` | krunner,plasmashell,… | Comma-separated window classes that are never moved. |
 | `debug` | false | Log every decision. |
 
@@ -284,7 +284,7 @@ journalctl --user -b -f | grep randomplace
 
 ## Notes and limits
 
-- **Left alone:** windows that are fullscreen, maximized, tiled or minimized are never moved, and non-maximized ones still count as obstacles. Dialogs and child windows are only ever moved to stay with their parent.
+- **Left alone:** windows that are fullscreen, maximized (fully, vertically or horizontally), snapped to a half or a quarter of the screen, tiled or minimized are never moved. Moving such a window would make KWin restore its earlier size. Maximize state is followed through KWin's maximize signal and also recognized from the geometry, so a window you size by hand to exactly the full height or width of the screen is treated as maximized too. If a move un-maximizes a window anyway, it is re-maximized at once and left alone after that. Non-maximized windows that are left alone still count as obstacles. Dialogs and child windows are only ever moved to stay with their parent.
 - **Dialogs and wear:** dialogs are not counted in the wear map, because they are short-lived and sit over their parent.
 - **"On all desktops" windows:** they take part in the reshuffle of whichever desktop you are on, and their new position applies on every desktop.
 - **Usage is per app, not per desktop.** An app you use a lot is protected on every desktop.
@@ -292,7 +292,7 @@ journalctl --user -b -f | grep randomplace
 - **Placement speed:** placing a new window takes a few milliseconds with a handful of windows open, and about 50 ms with 45 windows (measured in a fast JavaScript engine). KWin's engine may take a few times longer.
 - **Session restore:** windows restored right at login may be placed before saved usage and wear have loaded, so those first placements are purely random.
 - **Unsaved time:** focus time and wear not yet saved (at most `saveIntervalSec`) are lost if you log out abruptly or reinstall.
-- **Apps that resize themselves when moved** (seen with Steam under XWayland with display scaling) have their size restored, at most twice per move. The first time this happens for an app, the log says so. If an app keeps fighting, add its class to `excludeClasses` (Steam's is `steam`).
+- **Apps that resize themselves when moved** have their size restored, at most twice per move. The first time this happens for an app, the log says so. If an app keeps fighting, add its class to `excludeClasses` (Steam's is `steam`).
 - **Window rules** that force a position take precedence over this script. Some applications set their own geometry after the window appears; if one keeps snapping back, add its class to `excludeClasses`.
 
 ## Appendix: reading the burn-in numbers
