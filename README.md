@@ -292,7 +292,7 @@ journalctl --user -b -f | grep randomplace
 - **Placement speed:** placing a new window takes a few milliseconds with a handful of windows open, and about 50 ms with 45 windows (measured in a fast JavaScript engine). KWin's engine may take a few times longer.
 - **Session restore:** windows restored right at login may be placed before saved usage and wear have loaded, so those first placements are purely random.
 - **Unsaved time:** focus time and wear not yet saved (at most `saveIntervalSec`) are lost if you log out abruptly or reinstall.
-- **Apps that resize themselves when moved** have their size restored, at most twice per move. The first time this happens for an app, the log says so. If an app keeps fighting, add its class to `excludeClasses` (Steam's is `steam`).
+- **Apps that resize themselves when moved** have their size restored, at most twice per move. The first time this happens for an app, the log says so, for example `'Steam' (steam) resized itself 2300 ms after being moved: 1356x1475 -> 1100x900; size restored (restore 1 of 2)`. If restoring ever fails, that is always logged. If an app keeps fighting, add its class to `excludeClasses` (Steam's is `steam`).
 - **Window rules** that force a position take precedence over this script. Some applications set their own geometry after the window appears; if one keeps snapping back, add its class to `excludeClasses`.
 
 ## Appendix: reading the burn-in numbers

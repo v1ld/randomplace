@@ -1257,30 +1257,39 @@ function guardSize(w, width, height) {
     const id = wid(w);
     const old = sizeGuards.get(id);
     if (old) { try { w.frameGeometryChanged.disconnect(old.handler); } catch (e) { /* gone */ } }
-    const gd = { width: width, height: height, until: Date.now() + SIZE_GUARD_MS, restores: 0, restoring: false };
+    const movedAt = Date.now();
+    const gd = { width: width, height: height, until: movedAt + SIZE_GUARD_MS, restores: 0, restoring: false };
     gd.handler = guard("sizeGuard", function () {
         const done = function () {
             try { w.frameGeometryChanged.disconnect(gd.handler); } catch (e) { /* gone */ }
             if (sizeGuards.get(id) === gd) sizeGuards.delete(id);
         };
         if (w.deleted || Date.now() > gd.until || gd.restores >= SIZE_GUARD_MAX) { done(); return; }
-        const g = w.frameGeometry;
-        log("  geometry of '" + w.caption + "' changed " + (Date.now() - gd.until + SIZE_GUARD_MS) +
-            " ms after move: " + describeGeom(w) + (w.move || w.resize ? " (user move/resize)" : ""));
-        if (gd.restoring || w.move || w.resize || w.fullScreen || w.minimized) return;   // user action / ours
+        if (gd.restoring) return;                         // the change is our own restore
+        // a plain copy: the live geometry changes as soon as the size is restored
+        const g = plainRect(w.frameGeometry);
+        const ms = Date.now() - movedAt;
+        const user = w.move || w.resize;
+        log("geometry of '" + w.caption + "' changed " + ms + " ms after move: " + fmtRect(g) +
+            (user ? " (user move/resize, left alone)" : ""));
+        if (user || w.fullScreen || w.minimized) return;
         if (Math.abs(g.width - gd.width) < 1.5 && Math.abs(g.height - gd.height) < 1.5) return;
         gd.restores++;
         gd.restoring = true;
         w.frameGeometry = { x: g.x, y: g.y, width: gd.width, height: gd.height };
         gd.restoring = false;
+        const r = plainRect(w.frameGeometry);
+        const kept = Math.abs(r.width - gd.width) < 1.5 && Math.abs(r.height - gd.height) < 1.5;
+        const msg = "'" + w.caption + "' (" + appKey(w) + ") resized itself " + ms + " ms after being moved: " +
+            Math.round(gd.width) + "x" + Math.round(gd.height) + " -> " + Math.round(g.width) + "x" + Math.round(g.height) +
+            (kept ? "; size restored" : "; restoring failed, KWin kept " + Math.round(r.width) + "x" + Math.round(r.height)) +
+            " (restore " + gd.restores + " of " + SIZE_GUARD_MAX + ")";
         const key = appKey(w);
-        if (!warnedResizers[key]) {
+        if (!warnedResizers[key] || !kept) {      // once per app (always if it failed); details in debug
             warnedResizers[key] = true;
-            say("'" + w.caption + "' (" + key + ") resized itself after being moved (" +
-                Math.round(g.width) + "x" + Math.round(g.height) + "); restored its size " +
-                Math.round(gd.width) + "x" + Math.round(gd.height));
+            say(msg);
         } else {
-            log("restored size of '" + w.caption + "' after it resized itself");
+            log(msg);
         }
     });
     sizeGuards.set(id, gd);
