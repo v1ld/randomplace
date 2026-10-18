@@ -259,7 +259,7 @@ In normal use the windows you work in are focused, and their usage scores make t
 ### What this does not cover
 
 - **Static content inside windows.** Toolbars, sidebars and the like move with the window, so randomizing positions spreads their wear too. They aren't counted in the wear map, though, because their content varies.
-- **Plasma panels, desktop widgets and wallpaper.** These never move and aren't counted. Consider auto-hiding the panel and using the panel's own OLED-friendly options.
+- **Plasma panels, desktop widgets and wallpaper.** These never move and aren't counted (see `OLED-SETUP.md`).
 - **Maximized windows** aren't moved, but their visible title bars and borders are recorded as wear. Fullscreen windows are ignored.
 - **The simulation is a model.** Real usage patterns, window sizes and display times differ. The wear-report tool below shows what is actually happening on your screen.
 
@@ -364,19 +364,9 @@ A window ends up flush now mostly when there's genuinely no room elsewhere.
 
 These numbers come from a simulated model of use. Once v1.4 has been running for a while, `wear-report.py` prints the same peak/mean and variation figures for your actual screen. They will run higher at first, until enough history accumulates. They also cover a little less than the simulation: the script's wear map ignores window interiors and uses `wearCell` (20 px) cells rather than 8 px.
 
-## Other burn-in measures (outside this script)
+## Beyond this script
 
-These recommendations came out of working on RandomPlace, for an Alienware AW3926QW (LG RGB-stripe OLED, three-year warranty that includes burn-in). Already in place: no fixed elements on screen (taskbars hidden), a black desktop background, a black lock screen, the monitor suspending a minute after lock, and pixel refresh allowed to run.
-
-- **Keep the background black, and don't use a rotating wallpaper.** A black OLED pixel is switched off and doesn't wear at all. A rotating wallpaper wouldn't cancel window-border wear. It would only add wear wherever the wallpaper shows, aging the whole panel faster to get a slightly more even result. The same goes for the lock screen.
-- **Keep brightness moderate. This is the biggest remaining factor.** OLED wear rises steeply with how bright the pixels are driven. The panel's 1,300-nit peak is for HDR highlights. For desktop work, use what is comfortable for the room. With HDR on in Plasma, keep "SDR brightness" moderate, because it sets how bright ordinary windows are.
-- **Use dark themes everywhere:** Breeze Dark for Plasma and KDE apps, and dark mode in the browser, Steam and other apps. Fewer lit pixels means less wear.
-- **Dim inactive windows.** In System Settings → Desktop Effects, turn on "Dim Inactive". It darkens every window you aren't using, which on a large screen is most of what's visible.
-- **Turn the screen off when idle, not only on lock.** In Power Management, dim after a few minutes and turn the screen off after about 5–10 minutes. That covers walking away without locking.
-- **Fullscreen games and video:** HUDs are the classic burn-in source, and this script can't move fullscreen windows. Lower in-game brightness or HUD opacity where possible, and vary what you play.
-- **Leave the monitor on standby power.** Don't cut it at the wall, so the pixel refresh can run after use.
-- **Turn on pixel shift** if the monitor's menu offers it.
-- **Register the monitor and keep the receipt** for the burn-in warranty.
+Monitor, brightness, theme and game settings that reduce burn-in risk are covered in a separate guide, `OLED-SETUP.md`.
 
 ## Version history
 
