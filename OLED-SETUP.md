@@ -10,6 +10,7 @@ How this desktop is set up to keep OLED burn-in risk low, and why. These notes a
 | **Mode** | 5120×2160 at 165 Hz, scale 1.2, so 4267×1800 logical pixels. VRR off. |
 | **Monitor preset** | TrueBlack 500, chosen for accuracy over the 1,300-nit modes. |
 | **Desktop** | KDE Plasma 6.8 on Wayland, HDR on, Wide Color Gamut on. |
+| **GPU** | NVIDIA GeForce RTX 5070 Ti, proprietary driver 615. The AMD integrated GPU is present but inactive. |
 
 What `kscreen-doctor -o` reported, with SDR brightness since changed to 175:
 
@@ -40,6 +41,7 @@ Brightness control:    supported, set to 100% and dimming to 100%
 | Inactive windows | Dim Inactive effect at strength 55 | On a 39-inch screen most visible windows are inactive. Dimming them cuts their output, and therefore their wear. |
 | Brightness | SDR brightness 175 nits for daytime; still testing day and night levels | See below. This is the biggest single lever. |
 | HDR peak | TrueBlack 500, calibrated peak 500 nits | Highlights are capped at what the mode delivers, with no clipping or tone-mapping surprises. |
+| HDR video in the browser | Off in Zen by choice; YouTube plays its SDR version | Correct HDR in Zen needs GPU decoding, which on this machine means turning off the browser's decoder sandbox. Not worth the security cost for the little HDR content there is. See "HDR". |
 | Game HUDs | HUD brightness lowered in games that allow it | HUDs are static and drawn near "paper white". |
 | Monitor | Pixel shift on; left on standby power; pixel refresh allowed to run; registered for the warranty | See "Monitor maintenance". |
 | White point | Night Light **not** used, to keep colour accurate | A warmer white point would spare the blue subpixels (usually the shortest-lived), at the cost of colour accuracy. Declined for that reason. |
@@ -51,6 +53,78 @@ OLED wear rises faster than brightness does. As a rough guide, the aging rate go
 - **Where SDR brightness is set in Plasma 6.7/6.8.** The SDR brightness slider is gone from Display settings. It is now set in the HDR calibration wizard: the first screen sets the maximum brightness, the second the SDR brightness. `kscreen-doctor -o` shows the current value read-only.
 - **Sensible range.** Reference white for SDR content is about 100–120 nits. 150–200 is comfortable in a normally lit room. 175 nits for daytime is in that range.
 - **Evening dimming.** The ordinary brightness control (the Brightness and Color applet, or the brightness keys) still works in HDR mode and scales everything down from the SDR level. `kscreen-doctor` shows `Brightness control: supported, set to 100%`. That makes it the lever for a dimmer evening setting. Once comfortable day and night levels are settled, a small user timer could switch between them. Check `kscreen-doctor --help` for a brightness option first.
+
+## HDR
+
+HDR is on for the whole desktop. KWin shows SDR content at the SDR brightness (175 nits) and scales HDR content relative to it, as described under "HDR games" below. That scaling applies to HDR video too: paper white in an HDR video comes out about 14% dimmer than on a 203-nit setup, which is expected, not a fault.
+
+Each application has to pass its HDR content to KWin properly. Games through Proton and mpv do this without extra setup. Browsers need more work, and on this machine that took the setup below.
+
+### Zen browser
+
+Zen is built on Firefox (Zen 1.23.3b is based on Firefox 158). HDR video in Firefox on Linux is still experimental and off by default, and on an NVIDIA card it needs hardware video decoding as well.
+
+**Current state: HDR video is off in Zen, by choice.** Getting correct HDR colours worked, but only with GPU decoding through VA-API, and that requires turning off the sandbox of the browser's decoder process (`MOZ_DISABLE_RDD_SANDBOX=1`). With HDR off, Zen doesn't tell YouTube it can show HDR, so YouTube sends its SDR version, which looks correct. The rest of this section records how HDR was made to work, so it can be turned back on if that trade-off changes. See "Turning HDR back on" below.
+
+**The problem.** With HDR first switched on in Zen, YouTube HDR videos played with the wrong colours. The difference is easy to see against the preview thumbnails shown when you hover over the timeline.
+
+**The cause.** `about:support` showed two separate blocks:
+
+1. **HDR video was blocked.** `VIDEO_HDR` was *Blocklisted by gfxInfo, FEATURE_VIDEO_HDR_DISABLED*, so Zen received HDR streams from YouTube but didn't output them as HDR.
+2. **Hardware video decoding was blocked**, so every video was decoded in software on the CPU. Once HDR was allowed, colours were correct only with GPU decoding: the decoded frames then go straight to KWin as dmabuf buffers with their HDR colour information (`HW_DECODED_VIDEO_ZERO_COPY`, "WebRender Layer Compositor").
+
+**Why `media.hardware-video-decoding.force-enabled` is required.** Firefox refuses hardware decoding on this machine for two reasons, and this preference overrides both:
+
+- **A blanket NVIDIA block.** Firefox blocks hardware video decoding on all NVIDIA GPUs on Linux (`HARDWARE_VIDEO_DECODING`: *FEATURE_HARDWARE_VIDEO_DECODING_NO_LINUX_NVIDIA*). NVIDIA's driver has no native VA-API, the interface Firefox normally decodes through, so Firefox assumes it can't work.
+- **A failed startup test.** Before forcing, the entry read *FEATURE_FAILURE_VIDEO_DECODING_TEST_FAILED*. Firefox's own decoder check fails, even though VA-API works fine outside the browser (`vainfo` lists the NVIDIA driver and the VP9 Profile 2 and AV1 profiles YouTube HDR uses).
+
+Without the override, `nvidia-smi dmon -s u` shows the decoder (**dec**) at 0 during playback. With it, the **dec** column moves. The nvidia-vaapi-driver project lists this preference as required since Firefox 137.
+
+**Which decoder does the work: VA-API.** Starting Zen with `MOZ_LOG="FFmpegVideo:4"` shows `Requesting pixel format VAAPI_VLD`, so decoding goes through VA-API and the community nvidia-vaapi-driver. Firefox 153 added a native Vulkan Video decoder for NVIDIA, but here it logs `Vulkan FFmpeg decoder disabled`, because it fails its own startup test (`HARDWARE_VIDEO_DECODING_VULKAN`: *FEATURE_FAILURE_VIDEO_DECODING_VULKAN_TEST_FAILED*). So when HDR was working, the VA-API driver and its environment variables were what made it work.
+
+**Why the decoder sandbox has to be off for VA-API.** The nvidia-vaapi-driver talks to the NVIDIA kernel driver in ways the sandbox of the browser's decoder process (the RDD process) normally blocks, so its README lists `MOZ_DISABLE_RDD_SANDBOX=1` as needed. Tested here: with the variable removed, the **dec** column stays at 0. That sandbox limits the damage if a malicious video exploits a bug in a decoder; without it, that process runs with the user's normal permissions. Web pages keep their own sandbox (content sandbox level 6) either way.
+
+#### Current settings
+
+| Setting | Value | Why |
+|---|---|---|
+| `gfx.color_management.hdr` | default (`false`) | HDR video off. YouTube sends SDR. |
+| `media.hardware-video-decoding.force-enabled` | default (`false`) | Overriding the NVIDIA block is pointless while VA-API can't run, and blocklists also guard against crashes and driver bugs. |
+| `media.hardware-video-decoding-vulkan.enabled` | `true` | Does nothing while the Vulkan decoder fails its startup test. Kept on because Vulkan is the route that could give GPU decoding *without* turning off the sandbox. |
+| `MOZ_DISABLE_RDD_SANDBOX` | commented out in `~/.config/environment.d/nvidia-vaapi.conf` | Decoder sandbox stays on. |
+| `LIBVA_DRIVER_NAME=nvidia`, `NVD_BACKEND=direct` | in the same file | Harmless; only useful to mpv and other apps that decode through VA-API. Package: `libva-nvidia-driver`. |
+
+Without GPU decoding, video is decoded on the CPU. That handles 4K VP9 and AV1 fine, at some cost in power and heat.
+
+#### Turning HDR back on
+
+**The secure route: wait for Vulkan.** After a Zen or NVIDIA driver update, check `about:support` → Decision Log → `HARDWARE_VIDEO_DECODING_VULKAN`. While it reads *FEATURE_FAILURE_VIDEO_DECODING_VULKAN_TEST_FAILED*, nothing has changed. If it reads *available*:
+
+1. Set `gfx.color_management.hdr` to `true`. `media.hardware-video-decoding.force-enabled` may also be needed because of the blanket NVIDIA block; try without it first.
+2. Restart Zen and confirm the decoder with:
+
+   ```bash
+   MOZ_LOG="FFmpegVideo:4" /opt/zen-browser-bin/zen-bin 2>&1 | grep -iE "vulkan|vaapi" | head -20
+   ```
+
+   Vulkan in the output means decoding no longer depends on the VA-API driver, and the sandbox stays on.
+3. Run the checks below.
+
+**The route that worked, with the sandbox off.** Set `gfx.color_management.hdr`, `gfx.color_management.hdr.force_enabled` and `media.hardware-video-decoding.force-enabled` to `true`, uncomment `MOZ_DISABLE_RDD_SANDBOX=1`, then log out and back in.
+
+#### Checks when HDR is on
+
+1. **`about:support`, Decision Log:** `VIDEO_HDR` should read *available*.
+2. **`about:support`, Codec Support:** VP9 and AV1 should say *Supported* under Hardware Decoding.
+3. **`about:support`, Compositing:** should read *WebRender Layer Compositor*.
+4. **During playback:** run `nvidia-smi dmon -s u`. The **dec** column should move.
+5. **By eye:** play the test video [njX2bu-_Vw4](https://youtu.be/njX2bu-_Vw4) and compare its colours with the timeline preview thumbnails. YouTube's Stats for nerds should show a `vp09.02…` or `av01…` codec with BT.2020/PQ colour.
+
+#### Limits
+
+- **Streaming services:** Widevine runs at software security level on Linux, so Netflix, Disney+, Max and similar services cap the resolution and don't play HDR in any Linux browser. YouTube HDR works because it doesn't use that DRM.
+- **Video encoding** (video calls, screen sharing): there is no hardware encoding. The nvidia-vaapi-driver and Firefox's Vulkan path are both decode-only, and the CPU handles call-sized video fine.
+- **Burn-in:** fullscreen video pauses RandomPlace's reshuffle and drift. The "Hide YouTube Fullscreen Controls" extension keeps the player controls from sitting still on screen.
 
 ## Games
 
@@ -102,3 +176,8 @@ It shows how evenly window borders and title bars have spread across the screen.
 - [Xaver Hugl (KWin): On brightness and calibrating your displays](https://planet.kde.org/xavers-blog-2025-03-31-on-brightness-and-calibrating-your-displays)
 - [KDE Discuss: HDR calibration gone?](https://discuss.kde.org/t/hdr-calibration-gone/48034)
 - [KDE Discuss: Does the SDR brightness still affect HDR brightness in Plasma 6.4?](https://discuss.kde.org/t/does-the-sdr-brightness-still-affect-hdr-brightness-in-plasma6-4/34651)
+- [nvidia-vaapi-driver README](https://github.com/elFarto/nvidia-vaapi-driver)
+- [Mozilla Bug 1642854: HDR video support for Linux](https://bugzilla.mozilla.org/show_bug.cgi?id=1642854)
+- [Martin Stránský: Firefox & Linux in 2025](https://mastransky.wordpress.com/2026/01/23/firefox-linux-in-2025/)
+- [OMG! Ubuntu: Firefox is adding Vulkan video decoding for Nvidia GPUs](https://www.omgubuntu.co.uk/2026/07/firefox-vulkan-video-decoding-nvidia)
+- [Phoronix: NVIDIA VA-API Driver 0.0.18](https://phoronix.com/news/NVIDIA-VA-API-Driver-0.0.18)
