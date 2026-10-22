@@ -35,7 +35,7 @@ Brightness control:    supported, set to 100% and dimming to 100%
 | Desktop background | Black (#000000), not rotating | A black OLED pixel is off and doesn't wear at all. A rotating wallpaper wouldn't cancel window-border wear. It would only add wear wherever the wallpaper shows, aging the whole panel faster to get a slightly more even result. |
 | Lock screen | Black; monitor suspends 1 minute after locking | Same reason. |
 | Screen off when idle | Power Management: dim after a few minutes, screen off after 5–10 minutes | Covers walking away without locking. |
-| Window placement | RandomPlace 2.0.1: random placement, wear map, automatic reshuffle every 45 minutes while idle, drift | Stops window borders and title bars repeating on the same lines. See its README. |
+| Window placement | RandomPlace 2.0.2: random placement, wear map, automatic reshuffle every 45 minutes while idle, drift | Stops window borders and title bars repeating on the same lines. See its README. |
 | Dark themes | Breeze Dark for Plasma and apps; dark mode in Steam and elsewhere | Fewer lit pixels means less wear. |
 | Bright web pages | Dark Reader in the Zen browser | A full-screen white page is a far bigger emitter than any window border, and many sites paint their own white backgrounds whatever the theme. |
 | Inactive windows | Dim Inactive effect at strength 55 | On a 39-inch screen most visible windows are inactive. Dimming them cuts their output, and therefore their wear. |
@@ -64,7 +64,7 @@ Each application has to pass its HDR content to KWin properly. Games through Pro
 
 Zen is built on Firefox (Zen 1.23.3b is based on Firefox 158). HDR video in Firefox on Linux is still experimental and off by default, and on an NVIDIA card it needs hardware video decoding as well.
 
-**Current state: HDR video is off in Zen, by choice.** Getting correct HDR colours worked, but only with GPU decoding through VA-API, and that requires turning off the sandbox of the browser's decoder process (`MOZ_DISABLE_RDD_SANDBOX=1`). With HDR off, Zen doesn't tell YouTube it can show HDR, so YouTube sends its SDR version, which looks correct. The rest of this section records how HDR was made to work, so it can be turned back on if that trade-off changes. See "Turning HDR back on" below.
+**Current state: HDR video is off in Zen, by choice.** Getting correct HDR colours worked, but only with GPU decoding through VA-API, and that requires turning off the sandbox of the browser's decoder process (`MOZ_DISABLE_RDD_SANDBOX=1`). With HDR off, Zen doesn't tell YouTube it can show HDR, so YouTube sends its SDR version, which looks correct. The rest of this section records how HDR was made to work, so it can be turned back on once there is a secure way to do it. See "Future option: HDR video through Vulkan" below.
 
 **The problem.** With HDR first switched on in Zen, YouTube HDR videos played with the wrong colours. The difference is easy to see against the preview thumbnails shown when you hover over the timeline.
 
@@ -84,6 +84,17 @@ Without the override, `nvidia-smi dmon -s u` shows the decoder (**dec**) at 0 du
 
 **Why the decoder sandbox has to be off for VA-API.** The nvidia-vaapi-driver talks to the NVIDIA kernel driver in ways the sandbox of the browser's decoder process (the RDD process) normally blocks, so its README lists `MOZ_DISABLE_RDD_SANDBOX=1` as needed. Tested here: with the variable removed, the **dec** column stays at 0. That sandbox limits the damage if a malicious video exploits a bug in a decoder; without it, that process runs with the user's normal permissions. Web pages keep their own sandbox (content sandbox level 6) either way.
 
+#### Why the sandbox stays on
+
+Keeping the decoder sandbox was a deliberate choice of security over HDR video:
+
+- **What the sandbox guards against.** Video decoders parse complex, attacker-controlled data from any site that serves a video, and bugs in them are a recurring source of browser security flaws. The sandbox means a decoder exploit is confined to a process that can do very little. Without it, the same exploit runs with the user's normal permissions, with access to files, the session and anything else the account can reach.
+- **What it would buy.** Only HDR video in the browser. There is little HDR content, essentially YouTube, since streaming services don't offer HDR in Linux browsers at all. With HDR off, YouTube's SDR version looks correct, and the CPU decodes 4K without trouble.
+- **The risk is small but permanent; the benefit is small and occasional.** The sandbox would be off for every video on every site, all the time, to improve the few videos that are HDR.
+- **A better route is coming.** Firefox's Vulkan decoder gives GPU decoding with the sandbox left on. Waiting for it costs only HDR video in the meantime.
+
+HDR in games and mpv is unaffected. Those don't go through the browser.
+
 #### Current settings
 
 | Setting | Value | Why |
@@ -96,9 +107,9 @@ Without the override, `nvidia-smi dmon -s u` shows the decoder (**dec**) at 0 du
 
 Without GPU decoding, video is decoded on the CPU. That handles 4K VP9 and AV1 fine, at some cost in power and heat.
 
-#### Turning HDR back on
+#### Future option: HDR video through Vulkan
 
-**The secure route: wait for Vulkan.** After a Zen or NVIDIA driver update, check `about:support` → Decision Log → `HARDWARE_VIDEO_DECODING_VULKAN`. While it reads *FEATURE_FAILURE_VIDEO_DECODING_VULKAN_TEST_FAILED*, nothing has changed. If it reads *available*:
+**The secure route, once Vulkan works.** After a Zen or NVIDIA driver update, check `about:support` → Decision Log → `HARDWARE_VIDEO_DECODING_VULKAN`. While it reads *FEATURE_FAILURE_VIDEO_DECODING_VULKAN_TEST_FAILED*, nothing has changed. If it reads *available*:
 
 1. Set `gfx.color_management.hdr` to `true`. `media.hardware-video-decoding.force-enabled` may also be needed because of the blanket NVIDIA block; try without it first.
 2. Restart Zen and confirm the decoder with:
@@ -110,7 +121,7 @@ Without GPU decoding, video is decoded on the CPU. That handles 4K VP9 and AV1 f
    Vulkan in the output means decoding no longer depends on the VA-API driver, and the sandbox stays on.
 3. Run the checks below.
 
-**The route that worked, with the sandbox off.** Set `gfx.color_management.hdr`, `gfx.color_management.hdr.force_enabled` and `media.hardware-video-decoding.force-enabled` to `true`, uncomment `MOZ_DISABLE_RDD_SANDBOX=1`, then log out and back in.
+**The route that worked, with the sandbox off (not used, for the reasons above).** Recorded for reference only. Set `gfx.color_management.hdr`, `gfx.color_management.hdr.force_enabled` and `media.hardware-video-decoding.force-enabled` to `true`, uncomment `MOZ_DISABLE_RDD_SANDBOX=1`, then log out and back in.
 
 #### Checks when HDR is on
 

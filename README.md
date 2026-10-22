@@ -76,7 +76,7 @@ Changes apply at the next window placement or reshuffle, with no reload needed.
 | `driftPx` | 2 | Pixels per drift step. |
 | `driftIdleSec` | 20 | Seconds without input before windows may drift. |
 | **Advanced** | | |
-| `keepSizeOnMove` | true | Some apps, such as Steam under XWayland with display scaling, resize themselves when moved. For 5 seconds after the script moves a window, a size change the app makes on its own (including one during the move itself) is undone, at most twice. Resizing a window yourself is never affected. |
+| `keepSizeOnMove` | true | Some apps, such as Steam under XWayland with display scaling, resize themselves when moved. For 5 seconds after the script moves a window, a size change the app makes on its own (including one during the move itself) is undone, at most twice. Resizing a window yourself is never affected, and neither are maximizing, quick tiling or going fullscreen. |
 | `excludeClasses` | krunner,plasmashell,… | Comma-separated window classes that are never moved. |
 | `debug` | false | Log every decision. |
 
@@ -370,6 +370,7 @@ Monitor, brightness, theme and game settings that reduce burn-in risk are covere
 
 ## Version history
 
+- **2.0.2:** maximizing, quick tiling or going fullscreen within 5 seconds of the script moving a window (placement, reshuffle or drift) no longer leaves the window at the top left at its old size; the size guard now stands down for anything the window manager does.
 - **2.0.1:** no more "used before its declaration" warnings from KWin at load; metadata.json installed with mode 0644.
 - **2.0:** idle-aware automatic reshuffle and drift (helper gains Wayland idle detection); new Automatic settings tab; metadata.json author field.
 - **1.4.4:** corrected the size-restore log message (it printed the restored size twice).

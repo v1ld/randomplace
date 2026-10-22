@@ -1260,33 +1260,69 @@ function applied(w, x, y) {
 // by resizing themselves. For a short while after the script moves a window,
 // a size change the app makes on its own is undone, at most twice, so the
 // script never fights an app for long. Resizes you make yourself (dragging a
-// window edge) are never touched.
+// window edge) are never touched, and neither is anything the window manager
+// does to the window: maximizing, quick tiling or going fullscreen (by
+// shortcut, title-bar button or double-click) ends the guard at once.
 const SIZE_GUARD_MS = 5000;
 const SIZE_GUARD_MAX = 2;
 const sizeGuards = new Map();       // window id -> guard
 const warnedResizers = {};
 
+// Window-manager state changes that resize a window. KWin emits these before
+// the geometry changes (maximizedAboutToChange by its name; the others as the
+// mode is set), so they end the guard before it could undo the new size.
+const WM_RESIZE_SIGNALS = ["maximizedAboutToChange", "maximizedChanged", "quickTileModeChanged",
+                           "tileChanged", "fullScreenChanged"];
+
+// The window's geometry now fills its screen or a half/quarter of it: the
+// window manager did that (maximize, quick tile), not the app.
+function looksMaximizedOrSnapped(w) {
+    const ds = w.desktops || [];
+    const desk = ds.length ? ds[0] : workspace.currentDesktop;
+    let m = null;
+    try { m = workspace.clientArea(KWin.MaximizeArea !== undefined ? KWin.MaximizeArea : KWin.PlacementArea, w.output, desk); }
+    catch (e) { m = null; }
+    if (!goodRect(m)) return false;
+    return maximizedReason(w, w.output, desk, m) !== "";
+}
+
+function endSizeGuard(w, gd) {
+    try { w.frameGeometryChanged.disconnect(gd.handler); } catch (e) { /* gone */ }
+    gd.wmSignals.forEach(function (name) {
+        try { w[name].disconnect(gd.onWm); } catch (e) { /* gone */ }
+    });
+    gd.wmSignals = [];
+    const id = wid(w);
+    if (sizeGuards.get(id) === gd) sizeGuards.delete(id);
+}
+
 function guardSize(w, width, height) {
     if (!CFG.keepSizeOnMove || !w.frameGeometryChanged) return;
     const id = wid(w);
     const old = sizeGuards.get(id);
-    if (old) { try { w.frameGeometryChanged.disconnect(old.handler); } catch (e) { /* gone */ } }
+    if (old) endSizeGuard(w, old);
     const movedAt = Date.now();
-    const gd = { width: width, height: height, until: movedAt + SIZE_GUARD_MS, restores: 0, restoring: false };
+    const gd = { width: width, height: height, until: movedAt + SIZE_GUARD_MS, restores: 0, restoring: false,
+                 wmSignals: [] };
+    gd.onWm = function () {
+        if (gd.restoring) return;
+        log("'" + w.caption + "' maximized, tiled or made fullscreen; size guard ended");
+        endSizeGuard(w, gd);
+    };
     gd.handler = guard("sizeGuard", function () {
-        const done = function () {
-            try { w.frameGeometryChanged.disconnect(gd.handler); } catch (e) { /* gone */ }
-            if (sizeGuards.get(id) === gd) sizeGuards.delete(id);
-        };
+        const done = function () { endSizeGuard(w, gd); };
         if (w.deleted || Date.now() > gd.until || gd.restores >= SIZE_GUARD_MAX) { done(); return; }
         if (gd.restoring) return;                         // the change is our own restore
+        // maximized, tiled or fullscreen by now (in case no signal said so): not the app's doing
+        if (maxMode.get(id) || w.tile || w.fullScreen) { done(); return; }
+        if (looksMaximizedOrSnapped(w)) { done(); return; }
         // a plain copy: the live geometry changes as soon as the size is restored
         const g = plainRect(w.frameGeometry);
         const ms = Date.now() - movedAt;
         const user = w.move || w.resize;
         log("geometry of '" + w.caption + "' changed " + ms + " ms after move: " + fmtRect(g) +
             (user ? " (user move/resize, left alone)" : ""));
-        if (user || w.fullScreen || w.minimized) return;
+        if (user || w.minimized) return;
         if (Math.abs(g.width - gd.width) < 1.5 && Math.abs(g.height - gd.height) < 1.5) return;
         gd.restores++;
         gd.restoring = true;
@@ -1308,6 +1344,11 @@ function guardSize(w, width, height) {
     });
     sizeGuards.set(id, gd);
     w.frameGeometryChanged.connect(gd.handler);
+    WM_RESIZE_SIGNALS.forEach(function (name) {
+        try {
+            if (w[name] && typeof w[name].connect === "function") { w[name].connect(gd.onWm); gd.wmSignals.push(name); }
+        } catch (e) { /* signal not available in this KWin */ }
+    });
 }
 
 function fmtRect(r) {
