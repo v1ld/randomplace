@@ -553,8 +553,14 @@ function rebuildWearMap(m, rect, cell, why) {
     return nm;
 }
 
+// KWin stands in a "Placeholder-N" output while no real screen is connected,
+// for example while it recovers from a crash. Its size is made up and it
+// shows nothing on the panel, so it gets no wear map.
+function isPlaceholder(key) { return /^Placeholder-/.test(String(key)); }
+
 function wearMapFor(output, rect) {
     const key = String(output && output.name);
+    if (isPlaceholder(key)) return null;
     let m = wearMaps.get(key);
     if (m && (m.w !== Math.round(rect.width) || m.h !== Math.round(rect.height))) {
         m = rebuildWearMap(m, rect, CFG.wearCell, "screen size changed");
@@ -662,7 +668,8 @@ function captureWear() {
             const g = plainRect(w.frameGeometry);
             if (known ? intersects(g, rect) : w.output === output) rects.push(g);
         });
-        snap.push({ m: wearMapFor(output, rect), rects: rects });
+        const m = wearMapFor(output, rect);
+        if (m) snap.push({ m: m, rects: rects });
     });
     return snap;
 }
@@ -1664,6 +1671,7 @@ function mergeStore(text, now) {
     if (d.wear && typeof d.wear === "object") {
         Object.keys(d.wear).forEach(function (k) {
             const e = d.wear[k];
+            if (isPlaceholder(k)) { dirty = true; return; }   // dropped at the next save
             if (!validEntry(e)) return;
             const m = wearMaps.get(k);
             if (m) { if (mergeWearEntry(m, e, now)) nw++; }

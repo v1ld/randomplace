@@ -35,7 +35,7 @@ Brightness control:    supported, set to 100% and dimming to 100%
 | Desktop background | Black (#000000), not rotating | A black OLED pixel is off and doesn't wear at all. A rotating wallpaper wouldn't cancel window-border wear. It would only add wear wherever the wallpaper shows, aging the whole panel faster to get a slightly more even result. |
 | Lock screen | Black; monitor suspends 1 minute after locking | Same reason. |
 | Screen off when idle | Power Management: dim after a few minutes, screen off after 5–10 minutes | Covers walking away without locking. |
-| Window placement | RandomPlace 2.0.2: random placement, wear map, automatic reshuffle every 45 minutes while idle, drift | Stops window borders and title bars repeating on the same lines. See its README. |
+| Window placement | RandomPlace 2.0.3: random placement, wear map, automatic reshuffle every 45 minutes while idle, drift | Stops window borders and title bars repeating on the same lines. See its README. |
 | Dark themes | Breeze Dark for Plasma and apps; dark mode in Steam and elsewhere | Fewer lit pixels means less wear. |
 | Bright web pages | Dark Reader in the Zen browser | A full-screen white page is a far bigger emitter than any window border, and many sites paint their own white backgrounds whatever the theme. |
 | Inactive windows | Dim Inactive effect at strength 55 | On a 39-inch screen most visible windows are inactive. Dimming them cuts their output, and therefore their wear. |

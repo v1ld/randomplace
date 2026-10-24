@@ -27,6 +27,15 @@ talks to this tiny session-bus service:
 Data file: $XDG_STATE_HOME/randomplace/usage.json (default ~/.local/state/...).
 Override with RANDOMPLACE_STORE=/path/to/file (used by the tests).
 
+Backups, in backups/ next to the data file, taken before a save replaces it:
+  usage-YYYY-MM-DD.json   the first save of each day keeps the previous file;
+                          the newest BACKUP_DAYS of these are kept.
+  usage-shrunk-<time>.json
+                          the file as it was before a save that drops a
+                          screen's wear map or loses more than half of its
+                          recorded wear; the newest BACKUP_SHRUNK are kept.
+To restore one, copy it over usage.json and reload the script.
+
 The service is D-Bus activated on first use. While the script's clock is
 ticking it stays running (a few MB, idle between ticks); after a period
 without any calls it exits, and the next call simply starts it again.
@@ -50,6 +59,11 @@ IFACE = "local.randomplace.Store"
 ERR = "local.randomplace.Store.Error."
 MAX_BYTES = 4 * 1024 * 1024     # wear maps are ~40 KB per screen
 IDLE_EXIT_SEC = int(os.environ.get("RANDOMPLACE_IDLE_EXIT", "600"))
+BACKUP_DAYS = 7
+BACKUP_SHRUNK = 5
+SHRINK_MIN_SEC = 3600           # maps with less recorded wear than this don't count
+B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+B64I = {c: i for i, c in enumerate(B64)}
 
 XML = """
 <node>
@@ -113,6 +127,91 @@ def load():
     return text
 
 
+def wear_totals(data):
+    """Recorded wear (cell-seconds) per real screen, from saved data."""
+    out = {}
+    wear = data.get("wear") if isinstance(data, dict) else None
+    if not isinstance(wear, dict):
+        return out
+    for key, e in wear.items():
+        if key.startswith("Placeholder-") or not isinstance(e, dict):
+            continue
+        d = e.get("d")
+        if not isinstance(d, str):
+            continue
+        total = 0.0
+        try:
+            for i in range(0, len(d) - 1, 2):
+                q = B64I[d[i]] * 64 + B64I[d[i + 1]]
+                if q:
+                    total += 60 * (2 ** (q / 180) - 1)
+        except KeyError:
+            continue
+        out[key] = total
+    return out
+
+
+def keep_copy(dest, raw):
+    folder = os.path.dirname(dest)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".backup-", dir=folder)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(raw)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, dest)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def prune(folder, prefix, keep):
+    try:
+        names = sorted(n for n in os.listdir(folder) if n.startswith(prefix) and n.endswith(".json"))
+    except OSError:
+        return
+    for n in names[:-keep]:
+        try:
+            os.unlink(os.path.join(folder, n))
+        except OSError:
+            pass
+
+
+def backup(path, new_data):
+    """Keep the current file before it is replaced: once a day, and whenever
+    the new data would drop or shrink a screen's wear map. Never fails a save."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return                                # nothing saved yet
+    folder = os.path.join(os.path.dirname(path), "backups")
+    try:
+        daily = os.path.join(folder, "usage-%s.json" % time.strftime("%Y-%m-%d"))
+        if not os.path.exists(daily):
+            keep_copy(daily, raw)
+            prune(folder, "usage-2", BACKUP_DAYS)
+        try:
+            old = wear_totals(json.loads(raw.decode("utf-8")))
+        except ValueError:
+            return
+        new = wear_totals(new_data)
+        lost = [k for k, t in old.items() if t >= SHRINK_MIN_SEC and new.get(k, 0) < t / 2]
+        if lost:
+            dest = os.path.join(folder, "usage-shrunk-%s.json" % time.strftime("%Y%m%d-%H%M%S"))
+            keep_copy(dest, raw)
+            prune(folder, "usage-shrunk-", BACKUP_SHRUNK)
+            print("randomplace-store: save drops or halves the wear map of %s; previous file kept as %s"
+                  % (", ".join(sorted(lost)), dest), file=sys.stderr)
+    except OSError as e:
+        print("randomplace-store: backup failed: %s" % e, file=sys.stderr)
+
+
 def save(text):
     if len(text.encode("utf-8")) > MAX_BYTES:
         raise ValueError("payload too large")
@@ -127,6 +226,7 @@ def save(text):
     path = data_file()
     folder = os.path.dirname(path)
     os.makedirs(folder, mode=0o700, exist_ok=True)
+    backup(path, data)
     fd, tmp = tempfile.mkstemp(prefix=".usage-", dir=folder)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:

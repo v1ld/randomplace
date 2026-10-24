@@ -121,7 +121,7 @@ Positions are chosen at random, with probability proportional to `exp(−cost / 
 - **Grid:** one map per screen, keyed by output name and covering the whole screen. Panels, margins or a moved panel don't shift or reset it. A change of resolution, scale or cell size resamples the existing history, taking the maximum of each source block so worn lines survive.
 - **What counts:** the time since the last sample is added to each cell that shows a window's title-bar band or border. Parts hidden under another window, or off this screen, don't count. Window interiors don't count either, because their content changes. A window spanning two screens wears both.
 - **Clock:** sampling runs on the helper's clock every `wearSampleSec`, so keyboard-only work counts too. It also runs on every window, desktop or Activity change. Nothing is counted while the screen is locked, checked via `org.freedesktop.ScreenSaver`, and a gap of more than a few ticks (suspend) counts as only a few seconds.
-- **Storage:** about 40 KB per screen, with log-scaled precision better than 1%. Up to 6 screens are kept, dropping the least recently used. Wear fades with a half-life of `wearHalfLifeDays`. Stochastic rounding keeps that fade correct across many short sessions.
+- **Storage:** about 40 KB per screen, with log-scaled precision better than 1%. Up to 6 screens are kept, dropping the least recently used. The "Placeholder-N" screen that KWin stands in while no monitor is connected, for example while it recovers from a crash, gets no map: its size is made up and nothing on the panel is behind it. Wear fades with a half-life of `wearHalfLifeDays`. Stochastic rounding keeps that fade correct across many short sessions.
 - **Cost of scoring:** constant time per candidate position, using prefix sums.
 
 ### The helper
@@ -138,6 +138,11 @@ D-Bus starts the helper on demand. Because the clock keeps calling it, it stays 
 - **Unreadable file** (permissions, I/O error): the helper reports an error, and the script keeps working for the session without saving anything.
 - **Corrupt file:** the helper moves it to `usage.json.bad-<date>` before starting fresh.
 - **Format the script doesn't recognise** (for example from a newer version): the script refuses to save for the session and logs why.
+- **Backups:** before a save replaces the file, the helper keeps copies in `~/.local/state/randomplace/backups/`:
+  - `usage-<date>.json`: the file as it was before the first save of each day. The last 7 days are kept.
+  - `usage-shrunk-<time>.json`: the file as it was before a save that drops a screen's wear map or loses more than half of its recorded wear. The last 5 are kept, and the helper's log says when it took one.
+
+  To restore a backup: disable the script in System Settings (or run `./uninstall.sh` without `--purge`), copy the backup over `usage.json`, and enable the script again (or run `./install.sh`).
 
 ## Burn-in analysis
 
@@ -295,6 +300,7 @@ journalctl --user -b -f | grep randomplace
 - **`usage store not reachable or not readable`:** the helper isn't installed, isn't answering, or reported an error. Check the second command above and the helper's own log with `journalctl --user -b | grep -i randomplace`. Nothing is saved in this state, so your file is safe.
 - **`saved data is … NOT saving this session`:** the file is in a format this version doesn't understand. Move it aside, or restore a backup, and run `./install.sh` again.
 - **`usage.json.bad-<date>` files:** the helper found a corrupt store and kept it rather than overwriting it.
+- **History seems to be gone after a crash:** wear maps are kept per screen name, so run `wear-report.py`: its `screens:` line lists every map. Older versions recorded a map for KWin's temporary "Placeholder-1" screen during crash recovery, and the report showed it first. 2.0.3 ignores and drops it. If a map really is gone, restore it from `backups/` (see *Your data is protected*).
 - **More detail:** with `debug` on, the log also shows every window's usage score, each placement's hidden area and wear cost, and screen lock and unlock.
 
 ## Uninstall
@@ -370,6 +376,7 @@ Monitor, brightness, theme and game settings that reduce burn-in risk are covere
 
 ## Version history
 
+- **2.0.3:** no wear map for KWin's "Placeholder-N" stand-in screen, which appears while KWin recovers from a crash (an existing one is dropped at the next save, and `wear-report.py` ignores it and lists the screens it shows); the helper keeps daily backups of the store, plus one whenever a save would drop or halve a screen's wear map.
 - **2.0.2:** maximizing, quick tiling or going fullscreen within 5 seconds of the script moving a window (placement, reshuffle or drift) no longer leaves the window at the top left at its old size; the size guard now stands down for anything the window manager does.
 - **2.0.1:** no more "used before its declaration" warnings from KWin at load; metadata.json installed with mode 0644.
 - **2.0:** idle-aware automatic reshuffle and drift (helper gains Wayland idle detection); new Automatic settings tab; metadata.json author field.

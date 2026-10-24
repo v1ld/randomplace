@@ -40,9 +40,16 @@ def main():
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     wear = data.get("wear") or {}
+    # KWin's stand-in screen while no monitor is connected (e.g. during crash
+    # recovery); RandomPlace 2.0.3 no longer records or keeps it.
+    skipped = sorted(k for k in wear if k.startswith("Placeholder-"))
+    wear = {k: e for k, e in wear.items() if k not in skipped}
+    if skipped:
+        print("ignoring placeholder screen(s):", ", ".join(skipped))
     if not wear:
         print("No wear maps recorded yet in", path)
         return
+    print("screens:", ", ".join("%s (%dx%d px)" % (k, e.get("w", 0), e.get("h", 0)) for k, e in wear.items()))
     for key, e in wear.items():
         gw, gh, cell = e["gw"], e["gh"], e["cell"]
         d = decode(e["d"], gw * gh)
