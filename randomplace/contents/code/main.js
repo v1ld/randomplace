@@ -649,12 +649,15 @@ function intersects(a, b) {
 
 // What is on screen now, per output: { m, rects (bottom -> top, plain copies) }.
 // Every window that intersects a screen counts there, whichever screen KWin
-// considers it to be on.
+// considers it to be on. A window that covers the whole screen (fullscreen,
+// a borderless-fullscreen game, or maximized with no panels) hides
+// everything below it there and adds no wear itself: its outline is the
+// edge of the screen.
 function captureWear() {
     const desktop = workspace.currentDesktop, activity = workspace.currentActivity;
     const z = stackIndex();
     const shown = allWindows().filter(function (o) {
-        return o.normalWindow && !o.deleted && !o.minimized && !o.fullScreen &&
+        return o.normalWindow && !o.deleted && !o.minimized &&
                onDesktop(o, desktop) && onActivity(o, activity);
     }).sort(function (a, b) { return (z.get(wid(a)) || 0) - (z.get(wid(b)) || 0); });
     const snap = [];
@@ -663,10 +666,16 @@ function captureWear() {
         try { area = usableArea(null, output, desktop, true); } catch (e) { return; }
         const known = goodRect(output && output.geometry);
         const rect = outputRect(output, area);
-        const rects = [];
+        let rects = [];
         shown.forEach(function (w) {
             const g = plainRect(w.frameGeometry);
-            if (known ? intersects(g, rect) : w.output === output) rects.push(g);
+            if (!(known ? intersects(g, rect) : w.output === output)) return;
+            if (w.fullScreen || (known && g.x <= rect.x && g.y <= rect.y &&
+                    g.x + g.width >= rect.x + rect.width && g.y + g.height >= rect.y + rect.height)) {
+                rects = [];
+            } else {
+                rects.push(g);
+            }
         });
         const m = wearMapFor(output, rect);
         if (m) snap.push({ m: m, rects: rects });

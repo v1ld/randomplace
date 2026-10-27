@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # Installs (or upgrades) the RandomPlace KWin script plus its usage-store
 # helper, enables the script and loads it into the running KWin.
+#   ./install.sh               install or upgrade; saved usage and wear are kept
+#   ./install.sh --reset-wear  also clear the wear map; app usage is kept, and
+#                              the old file is kept in backups/
 set -euo pipefail
+
+RESET_WEAR=0
+case "${1:-}" in
+  "") ;;
+  --reset-wear) RESET_WEAR=1 ;;
+  *) echo "usage: $0 [--reset-wear]" >&2; exit 2 ;;
+esac
 
 ID=randomplace
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$ID"
@@ -60,6 +70,28 @@ fi
 # ---- load into the running KWin right now -----------------------------------
 kwin() { busctl --user call org.kde.KWin /Scripting org.kde.kwin.Scripting "$@"; }
 kwin unloadScript s "$ID" >/dev/null 2>&1 || true
+if [ "$RESET_WEAR" = 1 ]; then
+  # The script is unloaded, so it can't save its in-memory map back over this.
+  STORE="${XDG_STATE_HOME:-$HOME/.local/state}/randomplace/usage.json"
+  if [ -f "$STORE" ]; then
+    mkdir -p -m 700 "$(dirname "$STORE")/backups"
+    BACKUP="$(dirname "$STORE")/backups/usage-before-reset-$(date +%Y%m%d-%H%M%S).json"
+    cp -p "$STORE" "$BACKUP"
+    python3 - "$STORE" <<'EOF'
+import json, os, sys
+p = sys.argv[1]
+with open(p, encoding="utf-8") as f:
+    d = json.load(f)
+d["wear"] = {}
+tmp = p + ".reset"
+with open(tmp, "w", encoding="utf-8") as f:
+    json.dump(d, f)
+os.chmod(tmp, 0o600)
+os.replace(tmp, p)
+EOF
+    echo "Wear map cleared (app usage kept). Previous file: $BACKUP"
+  fi
+fi
 kwin loadScript ss "$MAIN" "$ID" >/dev/null
 kwin start >/dev/null
 

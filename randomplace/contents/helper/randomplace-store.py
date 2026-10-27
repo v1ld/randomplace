@@ -36,6 +36,10 @@ Backups, in backups/ next to the data file, taken before a save replaces it:
                           recorded wear; the newest BACKUP_SHRUNK are kept.
 To restore one, copy it over usage.json and reload the script.
 
+Weekly reports, in reports/ next to the data file: once a week a save also
+writes the wear-report.py output as wear-YYYY-MM-DD.txt; the newest
+REPORT_KEEP are kept (about six months).
+
 The service is D-Bus activated on first use. While the script's clock is
 ticking it stays running (a few MB, idle between ticks); after a period
 without any calls it exits, and the next call simply starts it again.
@@ -61,6 +65,8 @@ MAX_BYTES = 4 * 1024 * 1024     # wear maps are ~40 KB per screen
 IDLE_EXIT_SEC = int(os.environ.get("RANDOMPLACE_IDLE_EXIT", "600"))
 BACKUP_DAYS = 7
 BACKUP_SHRUNK = 5
+REPORT_EVERY_DAYS = 7
+REPORT_KEEP = 26
 SHRINK_MIN_SEC = 3600           # maps with less recorded wear than this don't count
 B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 B64I = {c: i for i, c in enumerate(B64)}
@@ -170,9 +176,9 @@ def keep_copy(dest, raw):
         raise
 
 
-def prune(folder, prefix, keep):
+def prune(folder, prefix, keep, suffix=".json"):
     try:
-        names = sorted(n for n in os.listdir(folder) if n.startswith(prefix) and n.endswith(".json"))
+        names = sorted(n for n in os.listdir(folder) if n.startswith(prefix) and n.endswith(suffix))
     except OSError:
         return
     for n in names[:-keep]:
@@ -212,6 +218,38 @@ def backup(path, new_data):
         print("randomplace-store: backup failed: %s" % e, file=sys.stderr)
 
 
+_render = None
+
+
+def weekly_report(path, data):
+    """Write the readable wear report once a week. Never fails a save."""
+    global _render
+    folder = os.path.join(os.path.dirname(path), "reports")
+    try:
+        names = sorted(n for n in os.listdir(folder) if n.startswith("wear-") and n.endswith(".txt"))
+    except FileNotFoundError:
+        names = []
+    except OSError:
+        return
+    try:
+        if names:
+            last = time.mktime(time.strptime(names[-1][5:15], "%Y-%m-%d"))
+            if time.time() - last < (REPORT_EVERY_DAYS - 0.5) * 86400:
+                return
+        if _render is None:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "wear_report", os.path.join(os.path.dirname(os.path.abspath(__file__)), "wear-report.py"))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _render = mod.render
+        text = "RandomPlace wear report, %s\n\n%s" % (time.strftime("%Y-%m-%d %H:%M"), _render(data))
+        keep_copy(os.path.join(folder, "wear-%s.txt" % time.strftime("%Y-%m-%d")), text.encode("utf-8"))
+        prune(folder, "wear-", REPORT_KEEP, ".txt")
+    except Exception as e:                     # a report is never worth a failed save
+        print("randomplace-store: weekly report failed: %r" % e, file=sys.stderr)
+
+
 def save(text):
     if len(text.encode("utf-8")) > MAX_BYTES:
         raise ValueError("payload too large")
@@ -241,6 +279,7 @@ def save(text):
         except OSError:
             pass
         raise
+    weekly_report(path, data)
 
 
 def touch():

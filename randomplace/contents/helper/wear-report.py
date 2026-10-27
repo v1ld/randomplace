@@ -8,6 +8,9 @@ For each screen it prints how much border/title-bar time is recorded, how
 evenly it is spread (peak / mean and coefficient of variation; lower is more
 even) and a heat map where darker characters mean more wear. No extra Python
 packages are needed.
+
+The helper also writes this report weekly to
+~/.local/state/randomplace/reports/wear-YYYY-MM-DD.txt (the last 26 are kept).
 """
 import json
 import math
@@ -34,22 +37,21 @@ def decode(s, n):
     return out
 
 
-def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else default_path()
-    cols = int(sys.argv[2]) if len(sys.argv) > 2 else 100
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
+def render(data, cols=100):
+    """The report for saved data, as text."""
+    lines = []
+    out = lines.append
     wear = data.get("wear") or {}
     # KWin's stand-in screen while no monitor is connected (e.g. during crash
     # recovery); RandomPlace 2.0.3 no longer records or keeps it.
     skipped = sorted(k for k in wear if k.startswith("Placeholder-"))
     wear = {k: e for k, e in wear.items() if k not in skipped}
     if skipped:
-        print("ignoring placeholder screen(s):", ", ".join(skipped))
+        out("ignoring placeholder screen(s): " + ", ".join(skipped))
     if not wear:
-        print("No wear maps recorded yet in", path)
-        return
-    print("screens:", ", ".join("%s (%dx%d px)" % (k, e.get("w", 0), e.get("h", 0)) for k, e in wear.items()))
+        out("No wear maps recorded yet")
+        return "\n".join(lines) + "\n"
+    out("screens: " + ", ".join("%s (%dx%d px)" % (k, e.get("w", 0), e.get("h", 0)) for k, e in wear.items()))
     for key, e in wear.items():
         gw, gh, cell = e["gw"], e["gh"], e["cell"]
         d = decode(e["d"], gw * gh)
@@ -58,11 +60,11 @@ def main():
         mean_all = total / len(d)
         mean_t = sum(touched) / len(touched) if touched else 0
         cv = math.sqrt(sum((v - mean_all) ** 2 for v in d) / len(d)) / mean_all if mean_all else 0
-        print("=" * cols)
-        print("%s   grid %dx%d of %d px cells" % (key, gw, gh, cell))
-        print("border/title-bar time: %.1f cell-hours   covered: %.1f%% of screen" %
-              (total / 3600, 100 * len(touched) / len(d)))
-        print("evenness: peak/mean %.2f   p99/mean %.2f   cv %.3f  (lower = more even)" % (
+        out("=" * cols)
+        out("%s   grid %dx%d of %d px cells" % (key, gw, gh, cell))
+        out("border/title-bar time: %.1f cell-hours   covered: %.1f%% of screen" %
+            (total / 3600, 100 * len(touched) / len(d)))
+        out("evenness: peak/mean %.2f   p99/mean %.2f   cv %.3f  (lower = more even)" % (
             max(d) / mean_t if mean_t else 0,
             sorted(touched)[int(0.99 * (len(touched) - 1))] / mean_t if touched else 0, cv))
         # downsample to the terminal: terminal cells are about twice as tall as wide
@@ -79,12 +81,21 @@ def main():
                 row.append(v)
                 peak = max(peak, v)
             grid.append(row)
-        print("+" + "-" * c + "+")
+        out("+" + "-" * c + "+")
         for row in grid:
-            print("|" + "".join(SHADES[min(len(SHADES) - 1, int(len(SHADES) * v / peak))] if peak else " "
-                                for v in row) + "|")
-        print("+" + "-" * c + "+")
-        print("scale: '%s' (none -> most)" % SHADES)
+            out("|" + "".join(SHADES[min(len(SHADES) - 1, int(len(SHADES) * v / peak))] if peak else " "
+                              for v in row) + "|")
+        out("+" + "-" * c + "+")
+        out("scale: '%s' (none -> most)" % SHADES)
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else default_path()
+    cols = int(sys.argv[2]) if len(sys.argv) > 2 else 100
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    sys.stdout.write(render(data, cols))
 
 
 if __name__ == "__main__":

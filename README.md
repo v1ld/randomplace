@@ -31,6 +31,8 @@ The installer:
 
 Re-running `./install.sh` upgrades in place. Saved usage and wear are kept. Anything not yet saved, at most `saveIntervalSec`, is lost when the script reloads.
 
+`./install.sh --reset-wear` does the same and also clears the wear map, keeping the per-app usage. The previous file is kept as `~/.local/state/randomplace/backups/usage-before-reset-<time>.json`.
+
 ## Settings
 
 Open **System Settings → Window Management → KWin Scripts** and click the configure button next to RandomPlace. The settings are grouped into four tabs: Placement, Burn-in, Usage and Advanced. Each has a tooltip. They are stored in `~/.config/kwinrc` under `[Script-randomplace]`, and you can also set them with `kwriteconfig6`:
@@ -119,7 +121,7 @@ Positions are chosen at random, with probability proportional to `exp(−cost / 
 ### Wear map
 
 - **Grid:** one map per screen, keyed by output name and covering the whole screen. Panels, margins or a moved panel don't shift or reset it. A change of resolution, scale or cell size resamples the existing history, taking the maximum of each source block so worn lines survive.
-- **What counts:** the time since the last sample is added to each cell that shows a window's title-bar band or border. Parts hidden under another window, or off this screen, don't count. Window interiors don't count either, because their content changes. A window spanning two screens wears both.
+- **What counts:** the time since the last sample is added to each cell that shows a window's title-bar band or border. Parts hidden under another window, or off this screen, don't count. While a window covers the whole screen, such as a fullscreen game or remote desktop, nothing on that screen counts. Window interiors don't count either, because their content changes. A window spanning two screens wears both.
 - **Clock:** sampling runs on the helper's clock every `wearSampleSec`, so keyboard-only work counts too. It also runs on every window, desktop or Activity change. Nothing is counted while the screen is locked, checked via `org.freedesktop.ScreenSaver`, and a gap of more than a few ticks (suspend) counts as only a few seconds.
 - **Storage:** about 40 KB per screen, with log-scaled precision better than 1%. Up to 6 screens are kept, dropping the least recently used. The "Placeholder-N" screen that KWin stands in while no monitor is connected, for example while it recovers from a crash, gets no map: its size is made up and nothing on the panel is behind it. Wear fades with a half-life of `wearHalfLifeDays`. Stochastic rounding keeps that fade correct across many short sessions.
 - **Cost of scoring:** constant time per candidate position, using prefix sums.
@@ -265,7 +267,7 @@ In normal use the windows you work in are focused, and their usage scores make t
 
 - **Static content inside windows.** Toolbars, sidebars and the like move with the window, so randomizing positions spreads their wear too. They aren't counted in the wear map, though, because their content varies.
 - **Plasma panels, desktop widgets and wallpaper.** These never move and aren't counted (see `OLED-SETUP.md`).
-- **Maximized windows** aren't moved, but their visible title bars and borders are recorded as wear. Fullscreen windows are ignored.
+- **Maximized windows** aren't moved, but their visible title bars and borders are recorded as wear, unless the window covers the whole screen. A window that covers the whole screen (fullscreen, a borderless-fullscreen game, or maximized with no panels) adds no wear, because its outline is the screen's edge. Everything below it on that screen counts as hidden.
 - **The simulation is a model.** Real usage patterns, window sizes and display times differ. The wear-report tool below shows what is actually happening on your screen.
 
 ## Inspecting your wear map
@@ -275,6 +277,8 @@ python3 ~/.local/share/kwin/scripts/randomplace/contents/helper/wear-report.py
 ```
 
 The tool prints, for each screen, how much border and title-bar time has been recorded, how evenly it is spread, and a heat map in the terminal where darker characters mean more wear. No extra packages are needed.
+
+The helper also saves this report once a week as `~/.local/state/randomplace/reports/wear-<date>.txt` and keeps the last 26, about six months. Comparing them shows whether wear is evening out over time, for example with `diff` or side by side in an editor.
 
 Each reshuffle also logs what it did, for example:
 
@@ -376,6 +380,7 @@ Monitor, brightness, theme and game settings that reduce burn-in risk are covere
 
 ## Version history
 
+- **2.0.4:** weekly wear reports kept for six months; `./install.sh --reset-wear` clears the wear map. Windows hidden under a fullscreen window no longer collect wear. Before, hours of fullscreen gaming or remote desktop recorded the frozen layout underneath as wear, which shows up in the map as sharp lines; that recorded wear fades with `wearHalfLifeDays`. A window covering the whole screen adds no wear of its own.
 - **2.0.3:** no wear map for KWin's "Placeholder-N" stand-in screen, which appears while KWin recovers from a crash (an existing one is dropped at the next save, and `wear-report.py` ignores it and lists the screens it shows); the helper keeps daily backups of the store, plus one whenever a save would drop or halve a screen's wear map.
 - **2.0.2:** maximizing, quick tiling or going fullscreen within 5 seconds of the script moving a window (placement, reshuffle or drift) no longer leaves the window at the top left at its old size; the size guard now stands down for anything the window manager does.
 - **2.0.1:** no more "used before its declaration" warnings from KWin at load; metadata.json installed with mode 0644.
