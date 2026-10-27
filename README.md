@@ -279,7 +279,7 @@ python3 ~/.local/share/kwin/scripts/randomplace/contents/helper/wear-report.py
 The tool prints, for each screen, how much border and title-bar time has been recorded, how evenly it is spread, and a heat map in the terminal. Never-worn cells stay blank. No extra packages are needed.
 
 - **Colour:** on a terminal that supports it (`COLORTERM=truecolor`, as Ghostty sets, or a 256-colour `TERM`), the map is drawn in colours from dark purple (light wear) to pale yellow (most wear), two map rows per text line. Elsewhere, when piped, and in the weekly files it uses characters, darker meaning more wear. `--color` and `--no-color` override this, and `NO_COLOR` is respected.
-- **Scale:** `--sqrt` (default) shows faint wear down to 1% of the peak while keeping hotspots clearly darker. `--linear` is proportional to wear, but hides anything under 10% of the peak. `--log` shows traces down to 0.1%, but makes trivial wear look significant. The evenness figures above the map are the same whichever you pick.
+- **Scale:** `--linear` (default) is proportional to wear, so a colour twice as far along the ramp means twice the wear. In colour, any wear at all still shows, at least as dark purple. With characters it hides anything under 10% of the peak. `--sqrt` shows faint wear down to 1% of the peak while keeping hotspots clearly darker. The weekly files use it, because characters have only 10 shades. `--log` shows traces down to 0.1%, but makes trivial wear look significant. The evenness figures above the map are the same whichever you pick.
 
 The helper also saves this report once a week as `~/.local/state/randomplace/reports/wear-<date>.txt` and keeps the last 26, about six months. Comparing them shows whether wear is evening out over time, for example with `diff` or side by side in an editor.
 
@@ -383,6 +383,7 @@ Monitor, brightness, theme and game settings that reduce burn-in risk are covere
 
 ## Version history
 
+- **2.0.6:** `wear-report.py` uses the linear scale by default again, now that the colour map shows faint wear; the weekly files keep the square-root scale.
 - **2.0.5:** `wear-report.py` draws the map in colour on capable terminals, uses a square-root scale by default (`--linear` and `--log` available) and prints a legend in percent of the peak.
 - **2.0.4:** weekly wear reports kept for six months; `./install.sh --reset-wear` clears the wear map. Windows hidden under a fullscreen window no longer collect wear. Before, hours of fullscreen gaming or remote desktop recorded the frozen layout underneath as wear, which shows up in the map as sharp lines; that recorded wear fades with `wearHalfLifeDays`. A window covering the whole screen adds no wear of its own.
 - **2.0.3:** no wear map for KWin's "Placeholder-N" stand-in screen, which appears while KWin recovers from a crash (an existing one is dropped at the next save, and `wear-report.py` ignores it and lists the screens it shows); the helper keeps daily backups of the store, plus one whenever a save would drop or halve a screen's wear map.

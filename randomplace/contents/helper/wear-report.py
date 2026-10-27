@@ -5,7 +5,7 @@
     python3 wear-report.py FILE [COLS]   # another file, and/or a different width
 
 Options:
-    --sqrt (default), --linear, --log   how wear maps to shades (see below)
+    --linear (default), --sqrt, --log   how wear maps to shades (see below)
     --color, --no-color                 force colour on or off; by default it
                                         is used on a terminal that supports it
                                         (COLORTERM=truecolor or a 256-colour
@@ -17,8 +17,10 @@ even) and a heat map: darker characters, or warmer colours, mean more wear.
 Never-worn cells stay blank. No extra Python packages are needed.
 
 Scales, as a fraction f of the map's peak:
-    linear  shade ~ f          honest about hotspots; hides wear under 10%
-    sqrt    shade ~ sqrt(f)    faint history visible down to 1% (default)
+    linear  shade ~ f          honest about hotspots (default); in colour faint
+                               wear stays visible, as characters it hides
+                               wear under 10%
+    sqrt    shade ~ sqrt(f)    faint history visible down to 1%
     log     3 decades of f     anything from 0.1% up; exaggerates faint wear
 
 The helper also writes this report weekly to
@@ -156,7 +158,7 @@ def heatmap_color(d, gw, gh, cols, scale, color):
     lines.append("+" + "-" * c + "+")
     steps = 40
     bar = "".join("\x1b[%sm█" % sgr(ramp(i / (steps - 1)), color) for i in range(steps)) + "\x1b[0m"
-    lines.append("scale: %s  %s -> 100%% of peak (%s; middle = %s); blank = never worn" % (
+    lines.append("scale: %s  up to %s -> 100%% of peak (%s; middle = %s); blank = never worn" % (
         bar, pct(unlevel(1 / steps, scale)), scale, pct(unlevel(0.5, scale))))
     return lines
 
@@ -166,7 +168,7 @@ def pct(f):
     return ("%.1f%%" % p) if p < 10 else ("%d%%" % round(p))
 
 
-def render(data, cols=100, scale="sqrt", color=None):
+def render(data, cols=100, scale="linear", color=None):
     """The report for saved data, as text. color: None, "256" or "truecolor"."""
     lines = []
     out = lines.append
@@ -204,7 +206,7 @@ def render(data, cols=100, scale="sqrt", color=None):
 
 
 def main():
-    args, scale, color = [], "sqrt", "auto"
+    args, scale, color = [], "linear", "auto"
     for a in sys.argv[1:]:
         if a in ("--sqrt", "--linear", "--log"):
             scale = a[2:]

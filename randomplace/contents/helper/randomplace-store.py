@@ -37,7 +37,7 @@ Backups, in backups/ next to the data file, taken before a save replaces it:
 To restore one, copy it over usage.json and reload the script.
 
 Weekly reports, in reports/ next to the data file: once a week a save also
-writes the wear-report.py output as wear-YYYY-MM-DD.txt; the newest
+writes the wear-report.py output (characters, square-root scale) as wear-YYYY-MM-DD.txt; the newest
 REPORT_KEEP are kept (about six months).
 
 The service is D-Bus activated on first use. While the script's clock is
@@ -243,7 +243,7 @@ def weekly_report(path, data):
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             _render = mod.render
-        text = "RandomPlace wear report, %s\n\n%s" % (time.strftime("%Y-%m-%d %H:%M"), _render(data))
+        text = "RandomPlace wear report, %s\n\n%s" % (time.strftime("%Y-%m-%d %H:%M"), _render(data, scale="sqrt"))
         keep_copy(os.path.join(folder, "wear-%s.txt" % time.strftime("%Y-%m-%d")), text.encode("utf-8"))
         prune(folder, "wear-", REPORT_KEEP, ".txt")
     except Exception as e:                     # a report is never worth a failed save
