@@ -1270,8 +1270,7 @@ function applied(w, x, y) {
     return Math.abs(a.x - x) < 1 && Math.abs(a.y - y) < 1;
 }
 
-// Move a window and verify KWin actually accepted it; if the first way of
-// assigning the geometry is ignored, retry with a plain object.
+// Move a window and verify KWin actually accepted it.
 // Some apps (Steam, under XWayland with display scaling) answer being moved
 // by resizing themselves. For a short while after the script moves a window,
 // a size change the app makes on its own is undone, at most twice, so the
@@ -1386,21 +1385,23 @@ function moveTo(w, x, y, quiet) {
     const log = quiet ? function () {} : logOuter;
     if (CFG.debug && !quiet) log("move '" + w.caption + "' (" + appKey(w) + (w.windowId ? ", X11 id " + w.windowId : "") +
                        ") to " + x + "," + y + "; before: " + describeGeom(w));
-    const g = w.frameGeometry;     // copy, modify, assign back
+    // Read the geometry, then assign a plain object. Never write .x/.y on the
+    // value frameGeometry returns: in KWin 6.8 that is a RectF whose x/y
+    // setters move only the left/top edge, and each write reaches the window,
+    // so a move becomes a resize that can go negative (Xwayland then wraps it
+    // to ~65000 px and allocates a huge buffer).
+    const g = w.frameGeometry;
     const x0 = g.x, y0 = g.y, w0 = g.width, h0 = g.height;
+    if (!(w0 >= 1 && h0 >= 1 && w0 < 32768 && h0 < 32768)) {
+        say("refusing to move '" + w.caption + "': its size " + w0 + "x" + h0 + " is not sane");
+        return false;
+    }
     // Watch for KWin un-maximizing the window because of this move.
     let unmaximized = false;
     const onMax = function (mode) { if (!Number(mode)) unmaximized = true; };
     let watching = false;
     try { w.maximizedAboutToChange.connect(onMax); watching = true; } catch (e) { /* n/a */ }
-    g.x = x;
-    g.y = y;
-    w.frameGeometry = g;
-    let how = "rect copy";
-    if (!unmaximized && !applied(w, x, y)) {
-        w.frameGeometry = { x: x, y: y, width: w0, height: h0 };
-        how = "plain object";
-    }
+    w.frameGeometry = { x: x, y: y, width: w0, height: h0 };
     if (watching) { try { w.maximizedAboutToChange.disconnect(onMax); } catch (e) { /* n/a */ } }
     if (unmaximized) {
         // It was maximized after all: put it back and leave it alone from now on.
@@ -1438,7 +1439,7 @@ function moveTo(w, x, y, quiet) {
                     fmtRect(b) + "); add '" + appKey(w) + "' to excludeClasses if this is unwanted");
             }
         }
-        log("moved '" + w.caption + "' to " + x + "," + y + " via " + how + "; after: " + describeGeom(w));
+        log("moved '" + w.caption + "' to " + x + "," + y + "; after: " + describeGeom(w));
         guardSize(w, w0, h0);
         return true;
     }

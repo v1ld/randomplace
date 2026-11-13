@@ -383,6 +383,7 @@ Monitor, brightness, theme and game settings that reduce burn-in risk are covere
 
 ## Version history
 
+- **2.0.7:** fixed moves turning into resizes. On KWin 6.8, writing x/y on the geometry KWin returns moves only the window's left/top edge, so a move could shrink a window to a negative size; XWayland then wrapped it to about 65000 px and allocated a huge buffer, freezing the desktop (Steam's Properties dialog triggered it reliably). Windows are now moved by assigning a complete rectangle, and a window whose size isn't sane is never moved.
 - **2.0.6:** `wear-report.py` uses the linear scale by default again, now that the colour map shows faint wear; the weekly files keep the square-root scale.
 - **2.0.5:** `wear-report.py` draws the map in colour on capable terminals, uses a square-root scale by default (`--linear` and `--log` available) and prints a legend in percent of the peak.
 - **2.0.4:** weekly wear reports kept for six months; `./install.sh --reset-wear` clears the wear map. Windows hidden under a fullscreen window no longer collect wear. Before, hours of fullscreen gaming or remote desktop recorded the frozen layout underneath as wear, which shows up in the map as sharp lines; that recorded wear fades with `wearHalfLifeDays`. A window covering the whole screen adds no wear of its own.
