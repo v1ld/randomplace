@@ -7,6 +7,7 @@ RandomPlace is a KWin script for OLED screens. Window borders and title bars are
 - **Usage-aware.** When windows must overlap, the ones you use least get covered. Usage is remembered per app across logins.
 - **Reshuffle on demand.** `Meta+Ctrl+Shift+R` re-places every movable window on the current desktop.
 - **Automatic, while you're away from the keyboard.** Every 45 minutes the layout is reshuffled, but only once you've been idle for 2 minutes, or right after you unlock. Between reshuffles, windows drift a couple of pixels at a time while you're idle. Nothing moves while you work, while a video plays, while a window is fullscreen, or while the screen is locked.
+- **Notification popups move too.** Each burst of notifications is shifted a random distance, up to 15% of the screen, from the position set in Plasma's notification settings, towards the middle of the screen. The popups in a burst move together, so Plasma's stacking stays intact.
 - **Separate layouts.** Each virtual desktop, Activity and screen is handled on its own.
 - **Dialogs stay over their parent.** On a reshuffle, dialogs move together with the window they belong to. Dialogs that don't declare a parent, such as the file Open/Save dialogs drawn by the desktop portal, are centered over the window that opened them.
 - **Settings page** in System Settings → Window Management → KWin Scripts → RandomPlace (configure button).
@@ -60,6 +61,7 @@ Changes apply at the next window placement or reshuffle, with no reload needed.
 | `wearHalfLifeDays` | 180 | How slowly old wear fades. |
 | `wearSampleSec` | 5 | How often the on-screen layout is sampled, from 1 to 20 s. |
 | `titleBarHeight` | 32 | Height of the title-bar band counted as wear. |
+| `notificationSpread` | 15 | Shift each burst of notification popups by a random offset of up to this percentage of the screen width and height, towards the middle of the screen. 0 turns it off. If Plasma keeps putting a popup back, the script leaves that popup alone and logs it once. |
 | **Usage** | | |
 | `recencyWeight` | 0.6 | 0 = only long-term per-app use counts; 1 = only how recently each window was focused. |
 | `recencyHalfLifeSec` | 600 | How quickly a window's "recently focused" bonus fades. |
@@ -383,6 +385,7 @@ Monitor, brightness, theme and game settings that reduce burn-in risk are covere
 
 ## Version history
 
+- **2.0.8:** notification popups are shifted by a random offset for each burst (`notificationSpread`, on the Burn-in tab), on top of Plasma's six anchor positions.
 - **2.0.7:** fixed moves turning into resizes. On KWin 6.8, writing x/y on the geometry KWin returns moves only the window's left/top edge, so a move could shrink a window to a negative size; XWayland then wrapped it to about 65000 px and allocated a huge buffer, freezing the desktop (Steam's Properties dialog triggered it reliably). Windows are now moved by assigning a complete rectangle, and a window whose size isn't sane is never moved.
 - **2.0.6:** `wear-report.py` uses the linear scale by default again, now that the colour map shows faint wear; the weekly files keep the square-root scale.
 - **2.0.5:** `wear-report.py` draws the map in colour on capable terminals, uses a square-root scale by default (`--linear` and `--log` available) and prints a legend in percent of the peak.

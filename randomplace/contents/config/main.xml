@@ -78,6 +78,12 @@
       <min>0</min>
       <max>200</max>
     </entry>
+    <entry name="notificationSpread" type="Int">
+      <label>Shift notification popups by up to (% of screen)</label>
+      <default>15</default>
+      <min>0</min>
+      <max>50</max>
+    </entry>
 
     <!-- Usage -->
     <entry name="recencyWeight" type="Double">

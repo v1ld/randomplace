@@ -66,6 +66,9 @@ function readSettings() { return {
     // (at most 20 s: the helper's clock reply must beat D-Bus's 25 s timeout)
     wearSampleSec: Math.min(20, Math.max(1, num("wearSampleSec", 5))),
     titleBarHeight: Math.max(0, num("titleBarHeight", 32)),
+    // Notification popups: shift each burst by a random offset of up to this
+    // share of the screen (in %) from where Plasma puts them. 0 = off.
+    notificationSpread: Math.min(50, Math.max(0, num("notificationSpread", 15))),
     // Persistence of per-app usage (and the wear map).
     persist: bool("persist", true),
     usageHalfLifeDays: Math.max(0.1, num("usageHalfLifeDays", 14)),
@@ -1505,6 +1508,90 @@ const placeNew = guard("placeNew", function (w) {
     sampleWear(Date.now(), true);
 });
 
+// ---------------------------------------------------------- notifications
+//
+// Plasma shows notification popups at one of six anchor positions, stacked
+// from there. Each burst of popups (from the first one appearing until the
+// last one closes) is shifted by one random offset, pointing into the screen
+// from the anchor's sides, so the whole stack moves together and keeps its
+// layout. Plasma repositions popups as others arrive, close or expand; the
+// same offset is then applied to the new position. If Plasma keeps putting a
+// popup back, the script gives up on that popup instead of fighting.
+
+const notifs = new Map();        // window id -> { w, target, fixes, since, gaveUp }
+let notifOffset = null;          // { dx, dy } for the current burst
+let warnedNotifFight = false;
+let warnedNotifMove = false;
+const NOTIF_MAX_FIXES = 6;       // re-applications per popup within NOTIF_FIX_WINDOW_MS
+const NOTIF_FIX_WINDOW_MS = 1000;
+
+function isNotification(w) {
+    return !!(w && (w.notification || w.criticalNotification));
+}
+
+// A random offset for a popup at g on a screen with usable area a: towards
+// the interior along each axis (both ways for a centred anchor).
+function newNotifOffset(g, a) {
+    const f = CFG.notificationSpread / 100;
+    const pick = function (pos, size, start, extent) {
+        const span = f * extent;
+        const c = (pos + size / 2 - start) / extent;        // 0 = start edge, 1 = end edge
+        if (c < 1 / 3) return Math.random() * span;
+        if (c > 2 / 3) return -Math.random() * span;
+        return (Math.random() * 2 - 1) * span;
+    };
+    return { dx: Math.round(pick(g.x, g.width, a.x, a.width)),
+             dy: Math.round(pick(g.y, g.height, a.y, a.height)) };
+}
+
+function shiftNotification(n) {
+    const w = n.w;
+    if (w.deleted || n.gaveUp) return;
+    const g = w.frameGeometry;
+    let a;
+    try { a = clientAreaFor(w.output, workspace.currentDesktop, w); } catch (e) { return; }
+    if (!notifOffset) notifOffset = newNotifOffset(g, a);
+    const x = Math.round(Math.max(a.x, Math.min(a.x + a.width - g.width, g.x + notifOffset.dx)));
+    const y = Math.round(Math.max(a.y, Math.min(a.y + a.height - g.height, g.y + notifOffset.dy)));
+    if (Math.abs(x - g.x) < 1 && Math.abs(y - g.y) < 1) { n.target = { x: g.x, y: g.y }; return; }
+    const now = Date.now();
+    if (now - n.since > NOTIF_FIX_WINDOW_MS) { n.since = now; n.fixes = 0; }
+    if (++n.fixes > NOTIF_MAX_FIXES) {
+        n.gaveUp = true;
+        if (!warnedNotifFight) {
+            warnedNotifFight = true;
+            say("notification popup keeps being put back by Plasma; leaving it where Plasma wants it");
+        }
+        return;
+    }
+    n.target = { x: x, y: y };
+    w.frameGeometry = { x: x, y: y, width: g.width, height: g.height };
+    if (!applied(w, x, y)) {
+        if (!warnedNotifMove) {
+            warnedNotifMove = true;
+            say("KWin did not move a notification popup; notification shifting has no effect here");
+        }
+        return;
+    }
+    log("notification shifted by " + (x - g.x) + "," + (y - g.y) + " to " + x + "," + y);
+}
+
+function trackNotification(w) {
+    if (CFG.notificationSpread <= 0) return;
+    if (notifs.size === 0) notifOffset = null;     // a new burst
+    const n = { w: w, target: null, fixes: 0, since: Date.now(), gaveUp: false };
+    notifs.set(wid(w), n);
+    // Plasma moved it (restacking, expanding): apply the offset to its new spot.
+    // Our own move lands on n.target and is ignored; a size change alone too.
+    w.frameGeometryChanged.connect(guard("notification", function () {
+        if (!notifs.has(wid(w)) || !n.target) return;
+        const g = w.frameGeometry;
+        if (Math.abs(g.x - n.target.x) < 1 && Math.abs(g.y - n.target.y) < 1) return;
+        shiftNotification(n);
+    }));
+    whenSized(w, function () { shiftNotification(n); });
+}
+
 // Some windows report a 0x0 size at windowAdded; wait until they have one.
 function whenSized(w, fn) {
     function ready() {
@@ -1942,6 +2029,7 @@ onActivated(workspace.activeWindow);
 workspace.windowAdded.connect(guard("windowAdded", function (w) {
     heartbeat();
     loadConfig();
+    if (isNotification(w)) { trackNotification(w); return; }
     trackMaximize(w);
     // A dialog that doesn't name its parent: put it over the window it belongs to.
     // (Dialogs that do name one are placed over it by KWin, and left alone.)
@@ -1955,6 +2043,7 @@ workspace.windowAdded.connect(guard("windowAdded", function (w) {
 }));
 
 workspace.windowRemoved.connect(guard("windowRemoved", function (w) {
+    notifs.delete(wid(w));
     const now = Date.now();
     if (w === current) {
         try { credit(now); } catch (e) { /* window may already be torn down */ }
