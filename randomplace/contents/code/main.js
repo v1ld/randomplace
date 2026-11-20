@@ -109,13 +109,13 @@ function readSettings() { return {
     driftActivePx: Math.max(1, Math.round(num("driftActivePx", 2))),
     // Windows of these classes are given fitPercent % of the screen (each
     // way) once, when they open, and are never resized by the script again.
-    fitClasses: String(readConfig("fitClasses", "wfica"))
+    fitClasses: String(readConfig("fitClasses", ""))
         .split(",").map(function (s) { return s.trim().toLowerCase(); })
         .filter(function (s) { return s.length > 0; }),
     fitPercent: Math.min(100, Math.max(30, num("fitPercent", 90))),
     excludeClasses: String(readConfig("excludeClasses",
         "krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge," +
-        "org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter"))
+        "org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter,wfica_splash"))
         .split(",").map(function (s) { return s.trim().toLowerCase(); })
         .filter(function (s) { return s.length > 0; }),
 }; }
@@ -1799,22 +1799,51 @@ const placeNew = guard("placeNew", function (w, size) {
     sampleWear(Date.now(), true);
 });
 
-// A window of one of the fitClasses opened: give it fitPercent % of the
-// screen, once, and place it. Meant for a window you would otherwise run
-// fullscreen all day (a remote desktop): a little smaller than the screen it
-// can be moved, so whatever is static inside it no longer sits on the same
-// pixels. It is taken out of fullscreen or maximized first if need be.
+// A window of one of the fitClasses is given fitPercent % of the screen and
+// placed. Meant for a window you would otherwise run fullscreen all day (a
+// remote desktop): a little smaller than the screen it can be moved, so
+// whatever is static inside it no longer sits on the same pixels.
+//
+// A window that opens as a plain window is sized at once. One that is
+// fullscreen is left alone: taking it out of fullscreen from here leaves the
+// app believing it still has the whole screen (a remote desktop then draws
+// the full resolution into the smaller window). It is sized when the app
+// itself leaves fullscreen, for instance from its own toolbar, each time it
+// does so, so the size is always the same.
 function isFitClass(w) {
     return CFG.fitClasses.length > 0 && CFG.fitClasses.indexOf(String(w.resourceClass || "").toLowerCase()) !== -1;
 }
+const fitPending = new Map();   // window id -> { w, at }: left fullscreen, to be sized once settled
+const FIT_SETTLE_MS = 700;
 const fitNew = guard("fitNew", function (w) {
     loadConfig();
-    try { if (w.fullScreen) w.fullScreen = false; } catch (e) { /* not ours to change */ }
+    say("'" + w.caption + "' (" + appKey(w) + ") opened " + (w.fullScreen ? "fullscreen" : "windowed") + " at " + fmtRect(w.frameGeometry));
+    try {
+        w.fullScreenChanged.connect(guard("fitWatch", function () {
+            say("'" + w.caption + "' (" + appKey(w) + ") went " + (w.fullScreen ? "fullscreen" : "back to a window") + ", now " + fmtRect(w.frameGeometry));
+            if (w.fullScreen) { fitPending.delete(wid(w)); fitted.delete(wid(w)); }
+            else fitPending.set(wid(w), { w: w, at: Date.now() });
+        }));
+    } catch (e) { /* signal not available */ }
+    if (w.fullScreen) {
+        say("'" + w.caption + "' (" + appKey(w) + ") is left fullscreen; it will be sized to " + CFG.fitPercent + "% when it leaves fullscreen");
+        return;
+    }
+    fitApply(w);
+});
+function fitSettled(now) {
+    fitPending.forEach(function (e, id) {
+        if (now - e.at < FIT_SETTLE_MS) return;
+        fitPending.delete(id);
+        if (e.w.deleted || e.w.fullScreen || !isFitClass(e.w)) return;
+        fitApply(e.w);
+    });
+}
+const fitApply = guard("fitApply", function (w) {
     try { w.setMaximize(false, false); } catch (e) { /* n/a */ }
     const reason = whyNot(w);
     if (reason) {
-        say("'" + w.caption + "' (" + appKey(w) + ") is in fitClasses but can't be sized: " + reason +
-            (w.fullScreen ? "; set the app to open in a window instead of fullscreen" : ""));
+        say("'" + w.caption + "' (" + appKey(w) + ") is in fitClasses but can't be sized: " + reason);
         return;
     }
     const ds = w.desktops || [];
@@ -2287,6 +2316,7 @@ function onTick() {
     if (!storeLoaded) tryLoad(now);
     else maybeSave(now, false);
     fitResized(now);
+    fitSettled(now);
     requestIdle();
     autoActions(now);
     requestTick(now);
@@ -2500,6 +2530,7 @@ workspace.windowRemoved.connect(guard("windowRemoved", function (w) {
     pinned.delete(wid(w));
     sizes.delete(wid(w));
     fitted.delete(wid(w));
+    fitPending.delete(wid(w));
     fitLater.delete(wid(w));
     delete sizeTracked[wid(w)];
     try { sampleWear(now, true); } catch (e) { say("ERROR in wear sample: " + e); }

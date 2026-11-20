@@ -10,7 +10,7 @@ RandomPlace is a KWin script for OLED screens. Window borders and title bars are
 - **Notification popups move too.** Each burst of notifications lands at a random spot. One setting says how far from the position set in Plasma's notification settings it may land: near it (the default), anywhere on the screen, or anything in between. The popups in a burst move together, so Plasma's stacking stays intact.
 - **Windows that span the screen still move.** A window as tall as the screen is moved sideways, and one as wide as the screen up and down, instead of being pinned.
 - **Sizes vary too.** A window can only move by the room its size leaves. Each reshuffle makes windows a little smaller than the size you gave them, by a new random amount of up to 25% (`sizeVariation`; 0 turns it off), so tall and wide windows stop wearing the same bands.
-- **A place for the window you'd otherwise keep fullscreen.** A remote desktop or similar can be given 90% of the screen when it opens (`fitClasses`, set for Citrix Workspace sessions by default), so it can be moved like everything else.
+- **A place for the window you'd otherwise keep fullscreen.** A remote desktop or similar is given 90% of the screen when it opens as a window or leaves fullscreen (`fitClasses`, empty by default), so it can be moved like everything else.
 - **Separate layouts.** Each virtual desktop, Activity and screen is handled on its own.
 - **Dialogs stay over their parent.** On a reshuffle, dialogs move together with the window they belong to. Dialogs that don't declare a parent, such as the file Open/Save dialogs drawn by the desktop portal, are centered over the window that opened them.
 - **Settings page** in System Settings → Window Management → KWin Scripts → RandomPlace (configure button).
@@ -67,7 +67,7 @@ Changes apply at the next window placement or reshuffle, with no reload needed.
 | `titleBarHeight` | 32 | Height of the title-bar band counted as wear. |
 | `notificationSpread` | 100 | How far a burst of notification popups may land from the position chosen in Plasma's notification settings, as a percentage of the distance to each screen edge. 0 leaves popups where Plasma puts them, 15 keeps them near that position, and 100 lets them appear anywhere on the screen. See *Notification popups* below. |
 | `sizeVariation` | 25 | On each reshuffle, make every freely movable window up to this many percent smaller than its base size, separately in width and height. 0 never resizes. See *Size variation* below. |
-| `fitClasses` | `wfica` | Comma-separated window classes that are given `fitPercent` of the screen when they open. The default is the Citrix Workspace session window; empty turns this off. See *Near-fullscreen windows* below. |
+| `fitClasses` | (empty) | Comma-separated window classes that are given `fitPercent` of the screen when they open as a window or leave fullscreen. Empty by default, which turns this off; for a Citrix Workspace session use `wfica`. See *Near-fullscreen windows* below. |
 | `fitPercent` | 90 | The share of the screen's width and height those windows get. |
 | **Usage** | | |
 | `recencyWeight` | 0.6 | 0 = only long-term per-app use counts; 1 = only how recently each window was focused. |
@@ -171,11 +171,11 @@ The wear map records window borders and can't tell one window from another, so i
 
 A window that stays fullscreen all day, such as a remote desktop session, can't be moved, so whatever is static inside it sits on the same pixels. Listing its window class in `fitClasses` changes that:
 
-- **When it opens,** it is taken out of fullscreen or maximized if necessary, given `fitPercent` of the screen's width and height (90% by default), and placed at random.
-- **After that** it is moved like any other window, on reshuffles and by drift, and never resized by the script again. A remote session therefore changes resolution once, at launch.
+- **When it opens as a plain window,** it is given `fitPercent` of the screen's width and height (90% by default) and placed at random.
+- **When it opens fullscreen,** it is left alone. It is sized the same way as soon as the app itself leaves fullscreen, for example from a button in the app's own toolbar (in a Citrix Workspace session, *Window* on the connection bar), and again each time it does, so the size is always the same. The script never takes such a window out of fullscreen itself: a remote desktop would go on drawing the full-screen resolution into the smaller window.
+- **After that** it is moved like any other window, on reshuffles and by drift, and not resized by the script again. A remote session therefore changes resolution once, when it becomes a window.
 - **What it buys:** at 90% on a 4267×1800 screen the window has 427 px of sideways room and 180 px of vertical room, so a static element 48 px wide is spread over about ten times its width.
 - **Finding the class:** run `qdbus6 org.kde.KWin /KWin org.kde.KWin.queryWindowInfo`, click the window, and read `resourceClass`.
-- **If the app insists on fullscreen,** the log says so once; set the app to open in a window in its own settings.
 - **Keyboard shortcuts in a remote session:** a windowed remote desktop usually stops receiving combinations such as Alt+Tab. That is fixed outside this script: in the remote desktop client (for Citrix Workspace, `TransparentKeyPassthrough=Remote` in `All_Regions.ini`) and with a KWin window rule for that window that sets "Ignore global shortcuts".
 
 `driftWhileActive` is the natural companion: reshuffles wait until you're idle, so during a working day such a window would otherwise sit still for hours.
@@ -486,6 +486,7 @@ Monitor, brightness, theme and game settings that reduce burn-in risk are covere
 
 ## Version history
 
+- **2.2.1:** `fitClasses` is now empty by default; set it to `wfica` for a Citrix Workspace session. A `fitClasses` window that opens fullscreen is no longer taken out of fullscreen; it is sized when the app itself leaves fullscreen, every time. The Citrix Workspace connection splash (`wfica_splash`) is in the default `excludeClasses`, so it is no longer placed like an app window.
 - **2.2.0:** notification popups now appear anywhere on the screen by default (`notificationSpread` 100) and keep off the window you're working in. Windows that span the full height or width of the screen are moved along their free side instead of being pinned (`slideFullSpan`). Windows are made up to 25% smaller than the size you gave them on each reshuffle (`sizeVariation`; 0 turns it off), with each app's usual window size remembered so windows don't shrink across restarts. Near-fullscreen sizing for windows you'd otherwise keep fullscreen (`fitClasses`, `fitPercent`). Drift now also runs while you work (`driftWhileActive`, `driftActivePx`). The wear report shows how widely each app's windows range over the screen (*own range*). `wearHalfLifeDays` now defaults to five years, because real wear never fades; if the old value is stored in your `kwinrc`, set the new one yourself.
 - **2.1.0:** notification popups can land anywhere on the screen: `notificationSpread` now runs from 0 to 100 and means "how far from Plasma's position, as a share of the way to each screen edge", so 100 is the whole screen with every position equally likely (settings from 2.0.8 keep working). A stack of popups that would run off the screen is pulled back as a whole instead of its popups piling up at the edge. `wear-report.py` adds a sharpness figure. Every geometry change the script makes now goes through one function that refuses incomplete or insane rectangles. New section on what a month of real wear data showed.
 - **2.0.8:** notification popups are shifted by a random offset for each burst (`notificationSpread`, on the Burn-in tab), on top of Plasma's six anchor positions.

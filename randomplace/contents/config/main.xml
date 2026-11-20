@@ -93,7 +93,7 @@
     </entry>
     <entry name="fitClasses" type="String">
       <label>Window classes given a near-fullscreen size when they open</label>
-      <default>wfica</default>
+      <default></default>
     </entry>
     <entry name="fitPercent" type="Int">
       <label>Size given to those windows (% of the screen, each way)</label>
@@ -216,7 +216,7 @@
     </entry>
     <entry name="excludeClasses" type="String">
       <label>Window classes never moved</label>
-      <default>krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge,org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter</default>
+      <default>krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge,org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter,wfica_splash</default>
     </entry>
     <entry name="debug" type="Bool">
       <label>Debug logging</label>

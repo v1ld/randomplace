@@ -259,7 +259,7 @@
        </item>
        <item row="10" column="1">
         <widget class="QLineEdit" name="kcfg_fitClasses">
-         <property name="text"><string>wfica</string></property>
+         <property name="text"><string></string></property>
          <property name="toolTip"><string>Comma-separated window classes, for windows you would otherwise keep fullscreen all day (a remote desktop, for example). When such a window opens it is taken out of fullscreen or maximized, given the share of the screen set below, once, and placed at random. After that it is moved like any other window but never resized by the script, so whatever is static inside it no longer sits on the same pixels.</string></property>
          <property name="placeholderText"><string>none</string></property>
         </widget>
@@ -542,7 +542,7 @@
        <item row="2" column="1">
         <widget class="QLineEdit" name="kcfg_excludeClasses">
          <property name="toolTip"><string>Comma-separated window classes (e.g. org.kde.konsole) that are never moved.</string></property>
-         <property name="text"><string>krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge,org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter</string></property>
+         <property name="text"><string>krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge,org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter,wfica_splash</string></property>
         </widget>
        </item>
        <item row="3" column="0" colspan="2">
