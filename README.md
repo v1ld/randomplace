@@ -6,8 +6,11 @@ RandomPlace is a KWin script for OLED screens. Window borders and title bars are
 - **Wear map.** For each screen, and across logins, RandomPlace records how long window borders and title bars have been visible on each part of the screen. New positions are steered towards areas that have been used less.
 - **Usage-aware.** When windows must overlap, the ones you use least get covered. Usage is remembered per app across logins.
 - **Reshuffle on demand.** `Meta+Ctrl+Shift+R` re-places every movable window on the current desktop.
-- **Automatic, while you're away from the keyboard.** Every 45 minutes the layout is reshuffled, but only once you've been idle for 2 minutes, or right after you unlock. Between reshuffles, windows drift a couple of pixels at a time while you're idle. Nothing moves while you work, while a video plays, while a window is fullscreen, or while the screen is locked.
-- **Notification popups move too.** Each burst of notifications is shifted a random distance, up to 15% of the screen, from the position set in Plasma's notification settings, towards the middle of the screen. The popups in a burst move together, so Plasma's stacking stays intact.
+- **Automatic.** Every 45 minutes the layout is reshuffled, but only once you've been idle for 2 minutes, or right after you unlock. Between reshuffles, windows drift a pixel or two at a time, also while you work. Nothing jumps while you work, and nothing moves at all while a window is fullscreen or the screen is locked.
+- **Notification popups move too.** Each burst of notifications lands at a random spot. One setting says how far from the position set in Plasma's notification settings it may land: near it (the default), anywhere on the screen, or anything in between. The popups in a burst move together, so Plasma's stacking stays intact.
+- **Windows that span the screen still move.** A window as tall as the screen is moved sideways, and one as wide as the screen up and down, instead of being pinned.
+- **Sizes vary too.** A window can only move by the room its size leaves. Each reshuffle makes windows a little smaller than the size you gave them, by a new random amount of up to 25% (`sizeVariation`; 0 turns it off), so tall and wide windows stop wearing the same bands.
+- **A place for the window you'd otherwise keep fullscreen.** A remote desktop or similar can be given 90% of the screen when it opens (`fitClasses`, set for Citrix Workspace sessions by default), so it can be moved like everything else.
 - **Separate layouts.** Each virtual desktop, Activity and screen is handled on its own.
 - **Dialogs stay over their parent.** On a reshuffle, dialogs move together with the window they belong to. Dialogs that don't declare a parent, such as the file Open/Save dialogs drawn by the desktop portal, are centered over the window that opened them.
 - **Settings page** in System Settings → Window Management → KWin Scripts → RandomPlace (configure button).
@@ -54,14 +57,18 @@ Changes apply at the next window placement or reshuffle, with no reload needed.
 | `optimizeMs` | 150 | Time budget for a whole reshuffle, shared between screens. |
 | `maxRestarts` | 300 | Upper limit on layouts tried per reshuffle. |
 | `keepDialogsWithParent` | true | Dialogs move together with their parent on reshuffle, and dialogs without a declared parent are centered over the window they belong to. |
+| `slideFullSpan` | true | Move a window that is as tall as the screen sideways, and one that is as wide as the screen up and down, keeping its size and its other coordinate. When off, such windows are never moved. |
 | **Burn-in** | | |
 | `wear` | true | Track wear and steer placement away from worn areas. |
 | `wearWeight` | 1.0 | Strength of wear avoidance compared with overlap avoidance (calibrated below). At 0, wear is still tracked but ignored. |
 | `wearCell` | 20 | Wear-map resolution in logical px. On a 5120×2160 panel at 120% scaling, one cell is 24 physical px. Changing it resamples the existing history. |
-| `wearHalfLifeDays` | 180 | How slowly old wear fades. |
+| `wearHalfLifeDays` | 1825 | How slowly old wear fades from the map. Real panel wear never fades, so the default is five years; a short value makes the script forget wear that is still there. |
 | `wearSampleSec` | 5 | How often the on-screen layout is sampled, from 1 to 20 s. |
 | `titleBarHeight` | 32 | Height of the title-bar band counted as wear. |
-| `notificationSpread` | 15 | Shift each burst of notification popups by a random offset of up to this percentage of the screen width and height, towards the middle of the screen. 0 turns it off. If Plasma keeps putting a popup back, the script leaves that popup alone and logs it once. |
+| `notificationSpread` | 100 | How far a burst of notification popups may land from the position chosen in Plasma's notification settings, as a percentage of the distance to each screen edge. 0 leaves popups where Plasma puts them, 15 keeps them near that position, and 100 lets them appear anywhere on the screen. See *Notification popups* below. |
+| `sizeVariation` | 25 | On each reshuffle, make every freely movable window up to this many percent smaller than its base size, separately in width and height. 0 never resizes. See *Size variation* below. |
+| `fitClasses` | `wfica` | Comma-separated window classes that are given `fitPercent` of the screen when they open. The default is the Citrix Workspace session window; empty turns this off. See *Near-fullscreen windows* below. |
+| `fitPercent` | 90 | The share of the screen's width and height those windows get. |
 | **Usage** | | |
 | `recencyWeight` | 0.6 | 0 = only long-term per-app use counts; 1 = only how recently each window was focused. |
 | `recencyHalfLifeSec` | 600 | How quickly a window's "recently focused" bonus fades. |
@@ -79,8 +86,10 @@ Changes apply at the next window placement or reshuffle, with no reload needed.
 | `driftEverySec` | 60 | Seconds between drift steps. |
 | `driftPx` | 2 | Pixels per drift step. |
 | `driftIdleSec` | 20 | Seconds without input before windows may drift. |
+| `driftWhileActive` | true | Also drift while you're using the computer. A window with a menu, popup or dialog open is skipped. |
+| `driftActivePx` | 2 | Pixels per drift step while you're using the computer. |
 | **Advanced** | | |
-| `keepSizeOnMove` | true | Some apps, such as Steam under XWayland with display scaling, resize themselves when moved. For 5 seconds after the script moves a window, a size change the app makes on its own (including one during the move itself) is undone, at most twice. Resizing a window yourself is never affected, and neither are maximizing, quick tiling or going fullscreen. |
+| `keepSizeOnMove` | true | Some apps, such as Steam under XWayland with display scaling, resize themselves when moved. For 5 seconds after the script moves a window, a size change the app makes on its own (including one during the move itself) is undone, at most twice. Resizing a window yourself is never affected, and neither are maximizing, quick tiling or going fullscreen. After a drift step this applies only to apps already caught doing it, so an app that changes its own size for a good reason is not undone just because a drift step happened to precede it. |
 | `excludeClasses` | krunner,plasmashell,… | Comma-separated window classes that are never moved. |
 | `debug` | false | Log every decision. |
 
@@ -108,9 +117,10 @@ Positions are chosen at random, with probability proportional to `exp(−cost / 
 **Why they exist.** Burn-in comes from the same content staying in the same place for many hours. The wear map can only spread wear if layouts actually change. With manual reshuffles only, a layout you leave alone for a whole working day concentrates its border and title-bar wear on a few lines. Two mechanisms keep the layout changing without getting in your way:
 
 - **Automatic reshuffle, every 45 minutes by default.** That gives 8–16 different layouts in an 8-hour day, which is enough for the wear map to work with. The simulation in the burn-in analysis changed layouts every 5 minutes, but reshuffling more often than every half hour or so adds little and is more disruptive. This interval is a reasoned judgment, not a measured optimum. A reshuffle only happens once you've been idle for `autoIdleSec` (2 minutes), so windows never jump while you're working. A reshuffle that is due also happens the moment you unlock, before you start working again.
-- **Drift.** Between reshuffles, while you're idle, each window moves `driftPx` (2) pixels every `driftEverySec` (60 s) along its own slowly turning path. It bounces off the screen edges and never moves into new overlap, and its dialogs move with it. Over an idle half hour a window wanders about 50–60 px. This blurs the window's edge lines the way the monitor's own pixel shift does (one pixel every three minutes on Alienware OLEDs), but over a larger range.
+- **Drift while you work (`driftWhileActive`, on by default).** Reshuffles never happen while you're active, so through hours of uninterrupted work the layout would stay put. So the once-a-minute drift step also runs while you work, at `driftActivePx` (2 px, the same as when idle) per step: over three hours a window wanders a few tens of pixels, which turns a hard border line into a soft band. A window with a menu, popup or dialog open is skipped for that step, because some apps close a dropdown when their window moves.
+- **Drift.** Between reshuffles each window moves `driftPx` (2) pixels every `driftEverySec` (60 s) along its own slowly turning path. It bounces off the screen edges and never moves into new overlap, and its dialogs move with it. Over half an hour a window wanders up to 50–60 px. This blurs the window's edge lines the way the monitor's own pixel shift does (one pixel every three minutes on Alienware OLEDs), but over a larger range.
 
-**When nothing moves:** while you type or use the mouse, while a video plays, while any window on the current desktop is fullscreen, while a window is being dragged or resized, and while the screen is locked.
+**When nothing moves:** while any window on the current desktop is fullscreen, while a window is being dragged or resized, and while the screen is locked. While you type or use the mouse, or a video plays in a window, the only movement is the small drift step of `driftWhileActive`; reshuffles and the larger idle drift wait until you're idle.
 
 **How idle time is measured.** On Wayland, KWin scripts can't see keyboard input, and KDE's screen-saver D-Bus call for idle time is not supported there. So the helper asks KWin directly, using the standard Wayland *ext-idle-notify-v1* protocol. It does this with a small built-in client, so no extra packages are needed. That protocol respects idle inhibitors, so a playing video counts as activity. Without the helper, or if the compositor doesn't offer the protocol, automatic reshuffle and drift stay off, and the log says so once.
 
@@ -119,6 +129,69 @@ Positions are chosen at random, with probability proportional to `exp(−cost / 
 - **Dialogs that name their parent:** KWin already places them over the parent, and the script never moves dialogs on its own. On a reshuffle, each dialog (and any dialog of that dialog) moves by the same amount as its parent, so it stays exactly where it was relative to it. If that would push it off-screen, it is kept on screen instead.
 - **Dialogs that don't name a parent:** this is common on Wayland for file dialogs, which the desktop portal draws in a separate process, so they arrive as ordinary windows of another app. They are recognized by their window type, or as portal windows, and centered over the most recently used window of the same app, or else the active window. From then on they follow that window like any other dialog.
 - **Child windows** that declare a parent, such as a settings window, are treated the same way and aren't reshuffled on their own.
+
+### Windows that span the screen
+
+A window as tall as the screen has nowhere to go vertically, and one as wide as the screen nowhere to go sideways. Earlier versions left such windows alone entirely, so their other two borders stayed on the same lines for as long as the window was open. Now they are moved along the side that is free (`slideFullSpan`):
+
+- **Full height** (maximized vertically, or sized that way by hand): moved sideways only. Its vertical position and its size are kept exactly.
+- **Full width:** moved up and down only.
+- **Still never moved:** fully maximized windows, and windows snapped to a half or a quarter of the screen. KWin would restore their earlier size.
+- **Safety net:** if moving a window makes KWin un-maximize it after all, it is re-maximized at once and never tried again.
+
+### Size variation
+
+**Why.** Position can only do so much. A window 1460 px tall on an 1800 px screen can put its title bar only in the top 340 px and its bottom edge only in the bottom 340 px, wherever it is placed. A month of real use showed exactly those two bands, worn about twice as much as the middle of the screen, and stronger wear avoidance did not remove them (see *What a month of real use showed*). Only a different size does.
+
+**What it does.** Each reshuffle gives every freely movable window a size up to `sizeVariation` percent (25 by default) smaller than its base size, a new random amount each time and separately for width and height. Set it to 0 to never resize windows.
+
+- **Never larger.** The base size is the size you chose.
+- **Resizing by hand sets the base.** Drag a window's edge and that is its size from then on.
+- **Only on reshuffles.** New windows open at the size their app asks for, and drift never resizes.
+- **Not resized:** windows that span the screen, maximized, snapped and fullscreen windows, dialogs, windows that can't be resized, and the windows of `fitClasses`. A window's minimum size is respected, and no window is made smaller than 320 px.
+- **Apps that remember their size.** Many apps reopen at the size their window was closed at, which would be a size this script gave it. To stop such windows shrinking a little more with every restart, the usual window size of each app is remembered with the usage data. A new window that is at most the variation smaller than its app's usual size takes the usual size as its base. Two windows of the same app that you keep at slightly different sizes will therefore converge on one size; resize one by hand to change the usual size.
+- **Apps that round the size.** A terminal takes a whole number of character cells, and some apps refuse a size. That is accepted as it is. If a window ends up reaching past the screen edge because it didn't shrink, it is moved back on screen a few seconds later.
+- **Turning it off** gives every window its base size back at the next reshuffle.
+
+**How much it helps.** Re-running the script on four windows about 1450 px tall (600 layouts of 45 minutes, `wearWeight` 2):
+
+| `sizeVariation` | Wear variation | Peak / mean | Sharpest 1% of steps |
+|---|---|---|---|
+| 0 | 0.84 | 3.8 | 60% of the mean |
+| 15 | 0.62 | 2.9 | 36% |
+| 25 | 0.52 | 2.5 | 30% |
+
+### Where each app's windows spend their time
+
+The wear map records window borders and can't tell one window from another, so it can't show an app that keeps to one part of the screen, where whatever is static *inside* its windows (a toolbar, a sidebar) would wear only that part. So the script also books, per app, where the centres of its windows sit on a coarse 12 × 6 grid.
+
+`wear-report.py` ends with an *own range* line per app: 1.00 means the app's windows were everywhere the other apps' windows were, 0.33 that they kept to a third of that, followed by its left-to-right share of time as twelve digits. Apps whose windows are much larger or smaller than the rest score lower by nature (about 0.75 in simulation); with fully random reshuffles, like-sized windows score about 0.94.
+
+### Near-fullscreen windows
+
+A window that stays fullscreen all day, such as a remote desktop session, can't be moved, so whatever is static inside it sits on the same pixels. Listing its window class in `fitClasses` changes that:
+
+- **When it opens,** it is taken out of fullscreen or maximized if necessary, given `fitPercent` of the screen's width and height (90% by default), and placed at random.
+- **After that** it is moved like any other window, on reshuffles and by drift, and never resized by the script again. A remote session therefore changes resolution once, at launch.
+- **What it buys:** at 90% on a 4267×1800 screen the window has 427 px of sideways room and 180 px of vertical room, so a static element 48 px wide is spread over about ten times its width.
+- **Finding the class:** run `qdbus6 org.kde.KWin /KWin org.kde.KWin.queryWindowInfo`, click the window, and read `resourceClass`.
+- **If the app insists on fullscreen,** the log says so once; set the app to open in a window in its own settings.
+- **Keyboard shortcuts in a remote session:** a windowed remote desktop usually stops receiving combinations such as Alt+Tab. That is fixed outside this script: in the remote desktop client (for Citrix Workspace, `TransparentKeyPassthrough=Remote` in `All_Regions.ini`) and with a KWin window rule for that window that sets "Ignore global shortcuts".
+
+`driftWhileActive` is the natural companion: reshuffles wait until you're idle, so during a working day such a window would otherwise sit still for hours.
+
+### Notification popups
+
+Plasma shows notification popups at one of six fixed positions and stacks them from there. RandomPlace moves each burst of popups (from the first one appearing until the last one closes) by one random offset.
+
+- **One setting covers both styles.** `notificationSpread` is how far the burst may land from Plasma's position, as a share of the way to each screen edge. The first popup of a burst lands with equal probability anywhere inside that box.
+  - **Near Plasma's position** (15, for example): popups stay in the area you chose in Plasma, within about 15% of the screen. A corner position has no room behind it, so the box reaches into the screen from that corner.
+  - **Anywhere** (100, the default): the box is the whole screen, so every position is equally likely and Plasma's chosen position no longer matters.
+  - **Off** (0): popups stay where Plasma puts them.
+- **The stack stays intact.** All popups of a burst share the offset. When Plasma rearranges them because one arrives, closes or expands, the same offset is applied to the new arrangement. If a growing stack would run off the screen, the whole burst is pulled back just far enough to fit.
+- **Off the window you're working in.** A spot where the first popup would cover part of the focused window is drawn again, up to 20 times. If no clear spot turns up (a very large focused window, or a small box), the last draw stands: plainly random, so popups are never crowded into the strip beside a large window. Only the burst's first popup is checked, at the moment it appears.
+- **No fighting.** If Plasma keeps putting a popup back, the script leaves that popup alone and logs it once.
+- **Not in the wear map.** Popups are short-lived, so they are spread evenly rather than steered by recorded wear.
 
 ### Wear map
 
@@ -265,6 +338,32 @@ The usage weights scale how much overlap costs. In a benchmark where windows are
 
 In normal use the windows you work in are focused, and their usage scores make them expensive to cover. If you often keep many windows open that you never click on, lower `wearWeight` or raise `baseOverlapCost`.
 
+### 5. What a month of real use showed
+
+Four weeks of recorded wear on one 4267×1800 screen, starting from an empty map, with `wearWeight` 2:
+
+| Day | Peak / mean | p99 / mean | Wear variation |
+|---|---|---|---|
+| 6 | 4.90 | 2.75 | 0.614 |
+| 12 | 3.33 | 2.27 | 0.488 |
+| 18 | 2.96 | 2.13 | 0.452 |
+| 24 | 2.63 | 2.10 | 0.445 |
+
+- **It levels off, and window sizes set the level.** The map settled into a band along the top and one along the bottom, each about 340 px deep and worn about twice as much as the middle. That is geometry, not a placement fault. A window can only move by the room its size leaves: a 1460 px tall window on an 1800 px screen can put its title bar only in the top 340 px and its bottom edge only in the bottom 340 px, wherever it is placed. The same holds sideways for wide windows.
+- **Position alone can't remove those bands.** Re-running the script on that kind of window mix (four windows about 1450 px tall, 600 layouts of 45 minutes each) gave:
+
+  | Run | Wear variation | Peak / mean |
+  |---|---|---|
+  | `wearWeight` 0 | 1.26 | 8.1 |
+  | `wearWeight` 2 | 0.83 | 3.6 |
+  | `wearWeight` 4 | 0.82 | 3.7 |
+  | `wearWeight` 2, heights varying between 1100 and 1600 px | 0.61 | 3.0 |
+  | `wearWeight` 2, windows 900–1300 px tall | 0.40 | 2.4 |
+
+  Wear avoidance does a great deal (1.26 → 0.83), but raising it further does nothing (0.83 → 0.82), because within the band there is nowhere better to go. Window height does the rest.
+- **What to do with that:** this is why sizes now vary on reshuffle (see *Size variation*). It also helps to keep windows you leave open for long a good deal shorter and narrower than the screen, and not to give them all the same height.
+- **The simulation in sections 2 to 4 was optimistic** about window sizes (450–1100 px tall), which is why it reached 0.48 with ease. The real figure got there only because the real window mix is more varied than four tall windows.
+
 ### What this does not cover
 
 - **Static content inside windows.** Toolbars, sidebars and the like move with the window, so randomizing positions spreads their wear too. They aren't counted in the wear map, though, because their content varies.
@@ -278,10 +377,12 @@ In normal use the windows you work in are focused, and their usage scores make t
 python3 ~/.local/share/kwin/scripts/randomplace/contents/helper/wear-report.py
 ```
 
-The tool prints, for each screen, how much border and title-bar time has been recorded, how evenly it is spread, and a heat map in the terminal. Never-worn cells stay blank. No extra packages are needed.
+The tool prints, for each screen, how much border and title-bar time has been recorded, how evenly it is spread, how sharp the differences between neighbouring cells are, and a heat map in the terminal. Never-worn cells stay blank. No extra packages are needed.
 
 - **Colour:** on a terminal that supports it (`COLORTERM=truecolor`, as Ghostty sets, or a 256-colour `TERM`), the map is drawn in colours from dark purple (light wear) to pale yellow (most wear), two map rows per text line. Elsewhere, when piped, and in the weekly files it uses characters, darker meaning more wear. `--color` and `--no-color` override this, and `NO_COLOR` is respected.
 - **Scale:** `--linear` (default) is proportional to wear, so a colour twice as far along the ramp means twice the wear. In colour, any wear at all still shows, at least as dark purple. With characters it hides anything under 10% of the peak. `--sqrt` shows faint wear down to 1% of the peak while keeping hotspots clearly darker. The weekly files use it, because characters have only 10 shades. `--log` shows traces down to 0.1%, but makes trivial wear look significant. The evenness figures above the map are the same whichever you pick.
+
+- **Sharpness:** the difference in wear between cells that touch, as a share of the mean wear: the average step, and the step at the sharpest 1% of cell borders. This is the figure closest to visible burn-in. A broad, gradual difference across the panel is hard to see, while a sharp line is not, and the evenness figures can't tell the two apart.
 
 The helper also saves this report once a week as `~/.local/state/randomplace/reports/wear-<date>.txt` and keeps the last 26, about six months. Comparing them shows whether wear is evening out over time, for example with `diff` or side by side in an editor.
 
@@ -321,7 +422,7 @@ journalctl --user -b -f | grep randomplace
 
 ## Notes and limits
 
-- **Left alone:** windows that are fullscreen, maximized (fully, vertically or horizontally), snapped to a half or a quarter of the screen, tiled or minimized are never moved. Moving such a window would make KWin restore its earlier size. Maximize state is followed through KWin's maximize signal and also recognized from the geometry, so a window you size by hand to exactly the full height or width of the screen is treated as maximized too. If a move un-maximizes a window anyway, it is re-maximized at once and left alone after that. Non-maximized windows that are left alone still count as obstacles. Dialogs and child windows are only ever moved to stay with their parent.
+- **Left alone:** windows that are fullscreen, fully maximized, snapped to a half or a quarter of the screen, tiled or minimized are never moved. Windows that span only the height or only the width of the screen are moved along their free side (see *Windows that span the screen*). Moving such a window would make KWin restore its earlier size. Maximize state is followed through KWin's maximize signal and also recognized from the geometry, so a window you size by hand to exactly the full height or width of the screen is treated like one maximized that way. If a move un-maximizes a window anyway, it is re-maximized at once and left alone after that. Non-maximized windows that are left alone still count as obstacles. Dialogs and child windows are only ever moved to stay with their parent.
 - **Dialogs and wear:** dialogs are not counted in the wear map, because they are short-lived and sit over their parent.
 - **"On all desktops" windows:** they take part in the reshuffle of whichever desktop you are on, and their new position applies on every desktop.
 - **Usage is per app, not per desktop.** An app you use a lot is protected on every desktop.
@@ -385,6 +486,8 @@ Monitor, brightness, theme and game settings that reduce burn-in risk are covere
 
 ## Version history
 
+- **2.2.0:** notification popups now appear anywhere on the screen by default (`notificationSpread` 100) and keep off the window you're working in. Windows that span the full height or width of the screen are moved along their free side instead of being pinned (`slideFullSpan`). Windows are made up to 25% smaller than the size you gave them on each reshuffle (`sizeVariation`; 0 turns it off), with each app's usual window size remembered so windows don't shrink across restarts. Near-fullscreen sizing for windows you'd otherwise keep fullscreen (`fitClasses`, `fitPercent`). Drift now also runs while you work (`driftWhileActive`, `driftActivePx`). The wear report shows how widely each app's windows range over the screen (*own range*). `wearHalfLifeDays` now defaults to five years, because real wear never fades; if the old value is stored in your `kwinrc`, set the new one yourself.
+- **2.1.0:** notification popups can land anywhere on the screen: `notificationSpread` now runs from 0 to 100 and means "how far from Plasma's position, as a share of the way to each screen edge", so 100 is the whole screen with every position equally likely (settings from 2.0.8 keep working). A stack of popups that would run off the screen is pulled back as a whole instead of its popups piling up at the edge. `wear-report.py` adds a sharpness figure. Every geometry change the script makes now goes through one function that refuses incomplete or insane rectangles. New section on what a month of real wear data showed.
 - **2.0.8:** notification popups are shifted by a random offset for each burst (`notificationSpread`, on the Burn-in tab), on top of Plasma's six anchor positions.
 - **2.0.7:** fixed moves turning into resizes. On KWin 6.8, writing x/y on the geometry KWin returns moves only the window's left/top edge, so a move could shrink a window to a negative size; XWayland then wrapped it to about 65000 px and allocated a huge buffer, freezing the desktop (Steam's Properties dialog triggered it reliably). Windows are now moved by assigning a complete rectangle, and a window whose size isn't sane is never moved.
 - **2.0.6:** `wear-report.py` uses the linear scale by default again, now that the colour map shows faint wear; the weekly files keep the square-root scale.

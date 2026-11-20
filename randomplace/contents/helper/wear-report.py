@@ -13,8 +13,14 @@ Options:
 
 For each screen it prints how much border/title-bar time is recorded, how
 evenly it is spread (peak / mean and coefficient of variation; lower is more
-even) and a heat map: darker characters, or warmer colours, mean more wear.
-Never-worn cells stay blank. No extra Python packages are needed.
+even), how sharp the differences between neighbouring cells are, and a heat
+map: darker characters, or warmer colours, mean more wear. Never-worn cells
+stay blank. No extra Python packages are needed.
+
+Sharpness is the figure closest to visible burn-in: a broad, gradual
+difference across the panel is hard to see, a sharp line is not. It is the
+difference in wear between cells that touch, as a share of the mean wear:
+the typical step, and the 99th-percentile step (the sharpest lines).
 
 Scales, as a fraction f of the map's peak:
     linear  shade ~ f          honest about hotspots (default); in colour faint
@@ -168,6 +174,67 @@ def pct(f):
     return ("%.1f%%" % p) if p < 10 else ("%d%%" % round(p))
 
 
+def sharpness(d, gw, gh):
+    """Wear differences between touching cells, as fractions of the mean wear:
+    (mean step, 99th-percentile step)."""
+    mean = sum(d) / len(d) if d else 0
+    if mean <= 0:
+        return 0.0, 0.0
+    steps = []
+    for r in range(gh):
+        row = r * gw
+        for c in range(gw):
+            v = d[row + c]
+            if c + 1 < gw:
+                steps.append(abs(v - d[row + c + 1]))
+            if r + 1 < gh:
+                steps.append(abs(v - d[row + gw + c]))
+    if not steps:
+        return 0.0, 0.0
+    steps.sort()
+    return sum(steps) / len(steps) / mean, steps[int(0.99 * (len(steps) - 1))] / mean
+
+
+SEAT_W, SEAT_H = 12, 6
+MIN_SEAT_HOURS = 2.0
+
+
+def own_range(data):
+    """Lines on how widely each app's windows range over the screen.
+
+    Each app's time per field of the 12 x 6 grid is compared with the average
+    of all listed apps: 1.00 = it was everywhere the others were, in the same
+    proportion; 0.33 = it kept to a third of that. The wear map above cannot
+    show this, because it does not know which window a border belongs to."""
+    rows = []
+    for k, e in (data.get("apps") or {}).items():
+        p = e.get("pos") if isinstance(e, dict) else None
+        if not isinstance(p, list) or len(p) != SEAT_W * SEAT_H:
+            continue
+        t = float(sum(p))
+        if t >= MIN_SEAT_HOURS * 3600:
+            rows.append((k, t, [v / t for v in p]))
+    if not rows:
+        return []
+    rows.sort(key=lambda r: -r[1])
+    n = len(rows)
+    pool = [sum(r[2][i] for r in rows) / n for i in range(SEAT_W * SEAT_H)]
+    lines = ["own range, per app with at least %g h on screen (1.00 = ranges as widely as the others; "
+             "left-to-right share of its time, 0-9):" % MIN_SEAT_HOURS]
+    for k, t, f in rows:
+        cols = [sum(f[r * SEAT_W + c] for r in range(SEAT_H)) for c in range(SEAT_W)]
+        top = max(cols) or 1
+        prof = "".join(str(min(9, int(round(9 * v / top)))) for v in cols)
+        if n > 1:
+            score = "%.2f" % sum(min(a, b) for a, b in zip(f, pool))
+        else:
+            score = " n/a"
+        lines.append("  %s  %s  %7.1f h  %s" % (score, prof, t / 3600, k))
+    if n == 1:
+        lines.append("  (one app only: nothing to compare it with yet)")
+    return lines
+
+
 def render(data, cols=100, scale="linear", color=None):
     """The report for saved data, as text. color: None, "256" or "truecolor"."""
     lines = []
@@ -198,10 +265,17 @@ def render(data, cols=100, scale="linear", color=None):
         out("evenness: peak/mean %.2f   p99/mean %.2f   cv %.3f  (lower = more even)" % (
             max(d) / mean_t if mean_t else 0,
             sorted(touched)[int(0.99 * (len(touched) - 1))] / mean_t if touched else 0, cv))
+        step_mean, step_99 = sharpness(d, gw, gh)
+        out("sharpness: neighbouring cells differ by %s of the mean on average, %s at the sharpest 1%%  (lower = softer)" % (
+            pct(step_mean), pct(step_99)))
         if color:
             lines.extend(heatmap_color(d, gw, gh, cols, scale, color))
         else:
             lines.extend(heatmap_ascii(d, gw, gh, cols, scale))
+    seats = own_range(data)
+    if seats:
+        out("=" * cols)
+        lines.extend(seats)
     return "\n".join(lines) + "\n"
 
 

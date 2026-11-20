@@ -62,7 +62,7 @@
     </entry>
     <entry name="wearHalfLifeDays" type="Int">
       <label>Wear history half-life (days)</label>
-      <default>180</default>
+      <default>1825</default>
       <min>1</min>
       <max>3650</max>
     </entry>
@@ -79,10 +79,27 @@
       <max>200</max>
     </entry>
     <entry name="notificationSpread" type="Int">
-      <label>Shift notification popups by up to (% of screen)</label>
-      <default>15</default>
+      <label>How far notification popups may land from Plasma's position (% of the way to each screen edge; 100 = anywhere)</label>
+      <default>100</default>
       <min>0</min>
-      <max>50</max>
+      <max>100</max>
+    </entry>
+
+    <entry name="sizeVariation" type="Int">
+      <label>Make windows up to this much smaller on reshuffle (%; 0 = never resize)</label>
+      <default>25</default>
+      <min>0</min>
+      <max>25</max>
+    </entry>
+    <entry name="fitClasses" type="String">
+      <label>Window classes given a near-fullscreen size when they open</label>
+      <default>wfica</default>
+    </entry>
+    <entry name="fitPercent" type="Int">
+      <label>Size given to those windows (% of the screen, each way)</label>
+      <default>90</default>
+      <min>30</min>
+      <max>100</max>
     </entry>
 
     <!-- Usage -->
@@ -132,6 +149,11 @@
       <default>true</default>
     </entry>
 
+    <entry name="slideFullSpan" type="Bool">
+      <label>Move full-height and full-width windows along their free side</label>
+      <default>true</default>
+    </entry>
+
     <!-- Automatic -->
     <entry name="autoReshuffle" type="Bool">
       <label>Reshuffle automatically while I'm idle</label>
@@ -174,6 +196,17 @@
       <default>20</default>
       <min>10</min>
       <max>3600</max>
+    </entry>
+
+    <entry name="driftWhileActive" type="Bool">
+      <label>Also drift while I'm using the computer</label>
+      <default>true</default>
+    </entry>
+    <entry name="driftActivePx" type="Int">
+      <label>Pixels per drift step while I'm using the computer</label>
+      <default>2</default>
+      <min>1</min>
+      <max>50</max>
     </entry>
 
     <!-- Advanced -->

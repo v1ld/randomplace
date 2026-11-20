@@ -62,13 +62,16 @@ function readSettings() { return {
     wear: bool("wear", true),
     wearWeight: Math.max(0, num("wearWeight", 1)),
     wearCell: Math.max(8, Math.round(num("wearCell", 20))),
-    wearHalfLifeDays: Math.max(1, num("wearHalfLifeDays", 180)),
+    // Real panel wear never fades, so by default the map barely does either
+    // (5 years); it only needs to forget slowly enough to stay within range.
+    wearHalfLifeDays: Math.max(1, num("wearHalfLifeDays", 1825)),
     // (at most 20 s: the helper's clock reply must beat D-Bus's 25 s timeout)
     wearSampleSec: Math.min(20, Math.max(1, num("wearSampleSec", 5))),
     titleBarHeight: Math.max(0, num("titleBarHeight", 32)),
-    // Notification popups: shift each burst by a random offset of up to this
-    // share of the screen (in %) from where Plasma puts them. 0 = off.
-    notificationSpread: Math.min(50, Math.max(0, num("notificationSpread", 15))),
+    // Notification popups: each burst lands at a random spot. This is how far
+    // from Plasma's own position it may land, in % of the distance to each
+    // screen edge: 0 = off, 15 = near Plasma's position, 100 = anywhere.
+    notificationSpread: Math.min(100, Math.max(0, num("notificationSpread", 100))),
     // Persistence of per-app usage (and the wear map).
     persist: bool("persist", true),
     usageHalfLifeDays: Math.max(0.1, num("usageHalfLifeDays", 14)),
@@ -81,6 +84,12 @@ function readSettings() { return {
     // Dialogs stay over their parent: they move with it on reshuffle, and
     // dialogs that don't say who their parent is are centered over it.
     keepDialogsWithParent: bool("keepDialogsWithParent", true),
+    // A window as tall (or as wide) as the screen can still move sideways
+    // (or up and down): move it along that free side instead of pinning it.
+    slideFullSpan: bool("slideFullSpan", true),
+    // On a reshuffle, make each window up to this many % smaller than the
+    // size you gave it, a new random amount each time. 0 = never resize.
+    sizeVariation: Math.min(25, Math.max(0, num("sizeVariation", 25))),
     // Undo size changes an app makes on its own right after being moved.
     keepSizeOnMove: bool("keepSizeOnMove", true),
     // Automatic reshuffle: every autoReshuffleMin minutes, but only once you
@@ -95,6 +104,15 @@ function readSettings() { return {
     driftEverySec: Math.max(10, Math.round(num("driftEverySec", 60))),
     driftPx: Math.max(1, Math.round(num("driftPx", 2))),
     driftIdleSec: Math.max(10, Math.round(num("driftIdleSec", 20))),
+    // Also drift while you are using the computer, driftActivePx per step.
+    driftWhileActive: bool("driftWhileActive", true),
+    driftActivePx: Math.max(1, Math.round(num("driftActivePx", 2))),
+    // Windows of these classes are given fitPercent % of the screen (each
+    // way) once, when they open, and are never resized by the script again.
+    fitClasses: String(readConfig("fitClasses", "wfica"))
+        .split(",").map(function (s) { return s.trim().toLowerCase(); })
+        .filter(function (s) { return s.length > 0; }),
+    fitPercent: Math.min(100, Math.max(30, num("fitPercent", 90))),
     excludeClasses: String(readConfig("excludeClasses",
         "krunner,plasmashell,ksplashqml,kwin_wayland,xwaylandvideobridge," +
         "org.kde.polkit-kde-authentication-agent-1,ksmserver-logout-greeter"))
@@ -455,6 +473,44 @@ function maximizedReason(w, output, desktop, area) {
     return "";
 }
 
+// Windows that a move un-maximized (and that were then re-maximized): never
+// tried again.
+const pinned = new Set();
+
+// How `w` may be moved: { reason, lock }.
+//   reason  non-empty: not at all (maximized, snapped, tiled)
+//   lock    "y": only sideways; "x": only up and down; null: freely
+// A window that spans the full height of the screen (maximized vertically,
+// or sized that way by hand) has nowhere to go vertically, but its side
+// borders would stay on the same two lines for ever if it were pinned: it is
+// moved sideways, keeping its vertical position and size exactly. The same
+// goes for a full-width window, up and down. Windows snapped to a half or a
+// quarter keep their place: KWin would restore their earlier size.
+function mobility(w, output, desktop, area) {
+    const fixed = function (why) { return { reason: why, lock: null }; };
+    const id = wid(w);
+    if (pinned.has(id)) return fixed("maximized (a move un-maximized it before)");
+    if (w.tile) return fixed("snapped/tiled");
+    const mode = maxMode.get(id) || 0;
+    const m = maximizeArea(output, desktop, area);
+    const g = w.frameGeometry;
+    const near = function (a, b) { return Math.abs(a - b) < 2.5; };
+    const fullW = !!(mode & 2) || (near(g.x, m.x) && near(g.width, m.width));
+    const fullH = !!(mode & 1) || (near(g.y, m.y) && near(g.height, m.height));
+    if (fullW && fullH) return fixed("maximized");
+    const halfW = near(g.width, m.width / 2), halfH = near(g.height, m.height / 2);
+    const atX = near(g.x, m.x) || near(g.x + g.width, m.x + m.width);
+    const atY = near(g.y, m.y) || near(g.y + g.height, m.y + m.height);
+    if (halfW && halfH && atX && atY) return fixed("snapped to a quarter");
+    if (fullH && halfW && atX) return fixed("snapped to a side");
+    if (fullW && halfH && atY) return fixed("snapped to top/bottom");
+    if (fullH || fullW) {
+        if (!CFG.slideFullSpan) return fixed(fullH ? "full height (slideFullSpan is off)" : "full width (slideFullSpan is off)");
+        return { reason: "", lock: fullH ? "y" : "x" };
+    }
+    return { reason: "", lock: null };
+}
+
 // Visible windows on this output + desktop + activity (each virtual desktop,
 // activity and screen is laid out on its own).
 function visibleOn(output, desktop, activity, exclude) {
@@ -669,21 +725,49 @@ function captureWear() {
         try { area = usableArea(null, output, desktop, true); } catch (e) { return; }
         const known = goodRect(output && output.geometry);
         const rect = outputRect(output, area);
-        let rects = [];
+        let rects = [], seats = [];
         shown.forEach(function (w) {
             const g = plainRect(w.frameGeometry);
             if (!(known ? intersects(g, rect) : w.output === output)) return;
             if (w.fullScreen || (known && g.x <= rect.x && g.y <= rect.y &&
                     g.x + g.width >= rect.x + rect.width && g.y + g.height >= rect.y + rect.height)) {
-                rects = [];
+                rects = []; seats = [];
             } else {
                 rects.push(g);
+                if (!excluded(w)) {
+                    seats.push({ k: appKey(w), b: seatBin((g.x + g.width / 2 - rect.x) / rect.width,
+                                                          (g.y + g.height / 2 - rect.y) / rect.height) });
+                }
             }
         });
         const m = wearMapFor(output, rect);
-        if (m) snap.push({ m: m, rects: rects });
+        if (m) snap.push({ m: m, rects: rects, seats: seats });
     });
     return snap;
+}
+
+// Where each app's windows sit. The wear map can't tell windows apart, so it
+// can't show an app that keeps to one part of the screen, where whatever is
+// static inside its windows would wear only that part. So the centre of
+// every window shown is booked, per app, on a coarse grid (seconds per
+// field, apps[..].pos, saved with the usage data). wear-report.py turns it
+// into each app's "own range".
+const SEAT_W = 12, SEAT_H = 6;
+function seatBin(fx, fy) {
+    const c = Math.max(0, Math.min(SEAT_W - 1, Math.floor(fx * SEAT_W)));
+    const r = Math.max(0, Math.min(SEAT_H - 1, Math.floor(fy * SEAT_H)));
+    return r * SEAT_W + c;
+}
+function addSeat(k, b, sec) {
+    let a = apps.get(k);
+    if (!a) { a = { ms: 0, ts: Date.now(), last: 0 }; apps.set(k, a); }
+    if (!a.pos) { a.pos = []; for (let i = 0; i < SEAT_W * SEAT_H; i++) a.pos.push(0); }
+    a.pos[b] += sec;
+}
+function validSeats(p) {
+    if (!p || p.length !== SEAT_W * SEAT_H) return false;
+    for (let i = 0; i < p.length; i++) if (!isFinite(p[i]) || p[i] < 0) return false;
+    return true;
 }
 
 // Credit the time since the last sample to what was on screen then, and
@@ -703,6 +787,7 @@ function sampleWear(now, force) {
                 for (let j = i + 1; j < s.rects.length; j++) if (intersects(s.rects[j], g)) above.push(s.rects[j]);
                 addWear(s.m, g, above, dt);
             }
+            (s.seats || []).forEach(function (e) { addSeat(e.k, e.b, dt); });
         });
         if (wearSnapshot.length) dirty = true;
     }
@@ -981,9 +1066,14 @@ function exactCost(items, weighted) {
     return total;
 }
 
+// The range of positions for `it`. A locked coordinate (see mobility) has a
+// range of exactly where the window is now.
 function bounds(it, area) {
-    return { lx: area.x, hx: Math.max(area.x, area.x + area.width - it.width),
-             ly: area.y, hy: Math.max(area.y, area.y + area.height - it.height) };
+    const b = { lx: area.x, hx: Math.max(area.x, area.x + area.width - it.width),
+                ly: area.y, hy: Math.max(area.y, area.y + area.height - it.height) };
+    if (it.lock === "x") b.lx = b.hx = it.fixX;
+    if (it.lock === "y") b.ly = b.hy = it.fixY;
+    return b;
 }
 
 function randomSpot(it, area) {
@@ -1227,6 +1317,7 @@ function optimizeLayout(items, area, wm, deadline) {
 function slack(it, items, area, axis) {
     const X = axis === "x";
     const pos = X ? it.x : it.y, len = X ? it.width : it.height;
+    if (it.lock === axis) return [pos, pos];
     let lo = X ? area.x : area.y;
     let hi = Math.max(lo, (X ? area.x + area.width : area.y + area.height) - len);
     for (let j = 0; j < items.length; j++) {
@@ -1268,6 +1359,28 @@ function jitter(mov, items, area, wm) {
 
 // ------------------------------------------------------------- moving
 
+// Every geometry change the script makes goes through setFrame, and nothing
+// else assigns frameGeometry. Two rules, both learned the hard way:
+//  - Always assign one complete plain rectangle. Never write .x/.y/.width/
+//    .height on the value frameGeometry returns: since KWin 6.6 that is a
+//    RectF whose x/y setters move only the left/top edge, and each write
+//    reaches the window, so a "move" becomes a resize that can go negative
+//    (Xwayland then wraps it to ~65000 px and allocates a huge buffer).
+//  - Never pass on a size or position that is not sane.
+const MAX_COORD = 32768;
+const fitLater = new Map();      // window id -> { w, at }: resized, to be checked once settled
+function saneSize(width, height) {
+    return width >= 1 && height >= 1 && width < MAX_COORD && height < MAX_COORD;
+}
+function setFrame(w, x, y, width, height) {
+    if (!(Math.abs(x) < 4 * MAX_COORD && Math.abs(y) < 4 * MAX_COORD) || !saneSize(width, height)) {
+        say("refusing to set the geometry of '" + w.caption + "' to " + x + "," + y + " " + width + "x" + height);
+        return false;
+    }
+    w.frameGeometry = { x: x, y: y, width: width, height: height };
+    return true;
+}
+
 function applied(w, x, y) {
     const a = w.frameGeometry;
     return Math.abs(a.x - x) < 1 && Math.abs(a.y - y) < 1;
@@ -1285,6 +1398,8 @@ const SIZE_GUARD_MS = 5000;
 const SIZE_GUARD_MAX = 2;
 const sizeGuards = new Map();       // window id -> guard
 const warnedResizers = {};
+const knownResizers = {};           // apps caught changing their size when moved
+const vettedApps = {};              // apps that have been through a guarded placement or reshuffle
 
 // Window-manager state changes that resize a window. KWin emits these before
 // the geometry changes (maximizedAboutToChange by its name; the others as the
@@ -1343,8 +1458,9 @@ function guardSize(w, width, height) {
         if (user || w.minimized) return;
         if (Math.abs(g.width - gd.width) < 1.5 && Math.abs(g.height - gd.height) < 1.5) return;
         gd.restores++;
+        knownResizers[appKey(w)] = true;
         gd.restoring = true;
-        w.frameGeometry = { x: g.x, y: g.y, width: gd.width, height: gd.height };
+        setFrame(w, g.x, g.y, gd.width, gd.height);
         gd.restoring = false;
         const r = plainRect(w.frameGeometry);
         const kept = Math.abs(r.width - gd.width) < 1.5 && Math.abs(r.height - gd.height) < 1.5;
@@ -1380,7 +1496,8 @@ function describeGeom(w) {
     return s;
 }
 
-function moveTo(w, x, y, quiet) {
+// size: optional { width, height } to give the window at the same time.
+function moveTo(w, x, y, quiet, size) {
     if (!isFinite(x) || !isFinite(y)) {
         say("refusing to move '" + w.caption + "' to " + x + "," + y);
         return false;
@@ -1388,24 +1505,29 @@ function moveTo(w, x, y, quiet) {
     const log = quiet ? function () {} : logOuter;
     if (CFG.debug && !quiet) log("move '" + w.caption + "' (" + appKey(w) + (w.windowId ? ", X11 id " + w.windowId : "") +
                        ") to " + x + "," + y + "; before: " + describeGeom(w));
-    // Read the geometry, then assign a plain object. Never write .x/.y on the
-    // value frameGeometry returns: in KWin 6.8 that is a RectF whose x/y
-    // setters move only the left/top edge, and each write reaches the window,
-    // so a move becomes a resize that can go negative (Xwayland then wraps it
-    // to ~65000 px and allocates a huge buffer).
+    // Read the current geometry once, then move by assigning a complete
+    // rectangle with the size unchanged (see setFrame).
     const g = w.frameGeometry;
     const x0 = g.x, y0 = g.y, w0 = g.width, h0 = g.height;
-    if (!(w0 >= 1 && h0 >= 1 && w0 < 32768 && h0 < 32768)) {
+    if (!saneSize(w0, h0)) {
         say("refusing to move '" + w.caption + "': its size " + w0 + "x" + h0 + " is not sane");
         return false;
+    }
+    // A deliberate resize along with the move (size variation).
+    const resizing = !!size && (Math.abs(size.width - w0) >= 2 || Math.abs(size.height - h0) >= 2);
+    const w1 = resizing ? size.width : w0, h1 = resizing ? size.height : h0;
+    if (resizing) {
+        const old = sizeGuards.get(wid(w));
+        if (old) endSizeGuard(w, old);
     }
     // Watch for KWin un-maximizing the window because of this move.
     let unmaximized = false;
     const onMax = function (mode) { if (!Number(mode)) unmaximized = true; };
     let watching = false;
     try { w.maximizedAboutToChange.connect(onMax); watching = true; } catch (e) { /* n/a */ }
-    w.frameGeometry = { x: x, y: y, width: w0, height: h0 };
+    const sent = setFrame(w, x, y, w1, h1);
     if (watching) { try { w.maximizedAboutToChange.disconnect(onMax); } catch (e) { /* n/a */ } }
+    if (!sent) return false;
     if (unmaximized) {
         // It was maximized after all: put it back and leave it alone from now on.
         const prev = maxMode.get(wid(w));
@@ -1423,19 +1545,31 @@ function moveTo(w, x, y, quiet) {
         try {
             w.setMaximize(!!(mode & 1), !!(mode & 2));
         } catch (e) {
-            w.frameGeometry = { x: x0, y: y0, width: w0, height: h0 };
+            setFrame(w, x0, y0, w0, h0);
         }
         maxMode.set(wid(w), mode);
+        pinned.add(wid(w));
         say("'" + w.caption + "' (" + appKey(w) + ") was maximized; the move un-maximized it, so it was " +
             "re-maximized and will be left in place");
         return false;
+    }
+    if (resizing) {
+        // A Wayland client takes the new size when it next draws, and may
+        // round it (a terminal to whole character cells), so the result can't
+        // be checked here and the size guard stays off. Once it has settled,
+        // fitResized() makes sure the window is still on screen.
+        log("moved '" + w.caption + "' to " + x + "," + y + " and resized it " + Math.round(w0) + "x" + Math.round(h0) +
+            " -> " + w1 + "x" + h1);
+        fitLater.set(wid(w), { w: w, at: Date.now() });
+        return true;
     }
     const a = w.frameGeometry;
     if (applied(w, x, y)) {
         // the size may already have changed during the move itself
         if (CFG.keepSizeOnMove && (Math.abs(a.width - w0) >= 1.5 || Math.abs(a.height - h0) >= 1.5)) {
             log("  size changed during the move (" + fmtRect(a) + "); restoring " + w0 + "x" + h0);
-            w.frameGeometry = { x: x, y: y, width: w0, height: h0 };
+            knownResizers[appKey(w)] = true;
+            setFrame(w, x, y, w0, h0);
             const b = w.frameGeometry;
             if (Math.abs(b.width - w0) >= 1.5 || Math.abs(b.height - h0) >= 1.5) {
                 say("'" + w.caption + "' (" + appKey(w) + ") changes size when moved and KWin keeps the new size (" +
@@ -1443,7 +1577,17 @@ function moveTo(w, x, y, quiet) {
             }
         }
         log("moved '" + w.caption + "' to " + x + "," + y + "; after: " + describeGeom(w));
-        guardSize(w, w0, h0);
+        // Drift moves a window every minute, also while you work. Guarding
+        // the size after each of those steps would undo a size change an app
+        // makes for a good reason (a player fitting its video, say) whenever
+        // it fell within 5 s of a step. So after a drift step the size is
+        // guarded only for apps caught resizing themselves when moved, and
+        // for apps not yet seen through a placement or reshuffle this
+        // session (those guard every window, and are where such apps are
+        // caught).
+        const key = appKey(w);
+        if (!quiet) vettedApps[key] = true;
+        if (!quiet || knownResizers[key] || !vettedApps[key]) guardSize(w, w0, h0);
         return true;
     }
     say("KWin ignored move of '" + w.caption + "' (wanted " + x + "," + y +
@@ -1451,11 +1595,12 @@ function moveTo(w, x, y, quiet) {
     return false;
 }
 
-function itemFor(w, z, usage, movable) {
+function itemFor(w, z, usage, movable, lock) {
     const g = w.frameGeometry;
     return {
         w: w, x: g.x, y: g.y, width: g.width, height: g.height,
         z: z, weight: CFG.baseOverlapCost + (usage.get(wid(w)) || 0), movable: movable,
+        lock: movable ? (lock || null) : null, fixX: g.x, fixY: g.y,
     };
 }
 
@@ -1467,9 +1612,150 @@ function meanWearUnder(list, wm) {
     return n ? s / n : 0;
 }
 
+// ------------------------------------------------------- size variation
+//
+// Why: a window can only move by the room its size leaves. A window 1460 px
+// tall on an 1800 px screen can put its title bar only in the top 340 px,
+// wherever it is placed, so tall windows wear a band along the top and one
+// along the bottom however well positions are spread (and wide windows the
+// same at the sides). Only a different size changes that. With
+// sizeVariation > 0, each reshuffle gives every freely movable window a size
+// up to that many % smaller than its base size, independently in width and
+// height. Never larger: the base is the size you chose.
+//
+// The base size of a window is the size it had when first seen, and after
+// that whatever you resize it to by hand. Apps often remember the size a
+// window was closed at, so a window may come back at a size this script gave
+// it; to keep such windows from shrinking a little more with every restart,
+// each app's usual size is remembered (apps[..].sz, saved with the usage
+// data) and a new window that is at most the variation smaller than its
+// app's usual size takes that as its base.
+
+const sizes = new Map();         // window id -> { bw, bh, sw, sh, startW, startH }
+const fitted = new Set();        // windows sized by fitClasses: never varied
+const sizeTracked = {};
+const MIN_VARIED = 320;          // never make a window narrower or lower than this (px)
+const FIT_AFTER_MS = 2000;
+
+function sizeTol(v) { return Math.max(24, 0.02 * v); }
+
+// Remember width x height as the usual window size of w's app.
+// keep: don't replace a size that is already known.
+function rememberSize(w, width, height, keep) {
+    if (excluded(w)) return;
+    const k = appKey(w);
+    let a = apps.get(k);
+    if (!a) { a = { ms: 0, ts: Date.now(), last: 0 }; apps.set(k, a); }
+    if (keep && a.sz) return;
+    a.sz = [Math.round(width), Math.round(height)];
+    dirty = true;
+}
+
+function sizeRecord(w) {
+    const id = wid(w);
+    let r = sizes.get(id);
+    const g = w.frameGeometry;
+    if (!r) {
+        r = { bw: g.width, bh: g.height, sw: null, sh: null, startW: 0, startH: 0 };
+        const a = apps.get(appKey(w));
+        const p = CFG.sizeVariation / 100;
+        const fits = function (v, usual) { return v <= usual + sizeTol(usual) && v >= usual * (1 - p) - sizeTol(usual); };
+        if (a && a.sz && p > 0 && fits(g.width, a.sz[0]) && fits(g.height, a.sz[1])) {
+            r.bw = a.sz[0]; r.bh = a.sz[1];
+            if (Math.abs(r.bw - g.width) >= 2 || Math.abs(r.bh - g.height) >= 2) {
+                log("'" + w.caption + "' (" + appKey(w) + ") opened at " + Math.round(g.width) + "x" + Math.round(g.height) +
+                    "; using the app's usual size " + r.bw + "x" + r.bh + " as its base");
+            }
+        } else {
+            rememberSize(w, r.bw, r.bh, true);
+        }
+        sizes.set(id, r);
+    } else {
+        // grown since (the app's own doing, or a resize we did not see): the
+        // larger size is the base. Shrinking the base takes a resize by hand.
+        if (g.width > r.bw + sizeTol(r.bw)) r.bw = g.width;
+        if (g.height > r.bh + sizeTol(r.bh)) r.bh = g.height;
+    }
+    return r;
+}
+
+// You resized the window by hand: that is its size from now on.
+function userResized(w) {
+    const g = w.frameGeometry;
+    if (!saneSize(g.width, g.height)) return;
+    const r = sizes.get(wid(w));
+    if (r) { r.bw = g.width; r.bh = g.height; r.sw = r.sh = null; }
+    rememberSize(w, g.width, g.height, false);
+    log("'" + w.caption + "' resized by hand to " + Math.round(g.width) + "x" + Math.round(g.height) + ": new base size");
+}
+
+function trackSize(w) {
+    if (!w || sizeTracked[wid(w)]) return;
+    try {
+        w.interactiveMoveResizeStarted.connect(function () {
+            const g = w.frameGeometry;
+            const r = sizes.get(wid(w)) || sizeRecord(w);
+            r.startW = g.width; r.startH = g.height;
+        });
+        w.interactiveMoveResizeFinished.connect(guard("userResized", function () {
+            const g = w.frameGeometry;
+            const r = sizes.get(wid(w));
+            if (!r || !r.startW) return;
+            if (Math.abs(g.width - r.startW) >= 1.5 || Math.abs(g.height - r.startH) >= 1.5) userResized(w);
+            r.startW = r.startH = 0;
+        }));
+        sizeTracked[wid(w)] = true;
+    } catch (e) { /* signals not available: only growth is noticed (see sizeRecord) */ }
+}
+
+// Choose this reshuffle's size for a movable item. Returns true if the window
+// is to be resized (then it.width / it.height hold the new size).
+function planSize(it, area) {
+    const w = it.w, id = wid(w);
+    const p = CFG.sizeVariation / 100;
+    const known = sizes.get(id);
+    // off: only windows still at a size we gave them need anything (their base back)
+    if (p <= 0 && !(known && known.sw !== null)) return false;
+    if (it.lock || w.resizeable === false || fitted.has(id)) return false;
+    const r = sizeRecord(w);
+    let minW = MIN_VARIED, minH = MIN_VARIED;
+    try { if (w.minSize) { minW = Math.max(minW, +w.minSize.width || 0); minH = Math.max(minH, +w.minSize.height || 0); } } catch (e) { /* n/a */ }
+    const pickSize = function (base, min, room) {
+        const v = p > 0 ? base * (1 - Math.random() * p) : base;
+        return Math.round(Math.min(room, base, Math.max(min, v)));
+    };
+    const tw = pickSize(r.bw, minW, area.width), th = pickSize(r.bh, minH, area.height);
+    if (p > 0) { r.sw = tw; r.sh = th; } else { r.sw = r.sh = null; }
+    if (Math.abs(tw - it.width) < 2 && Math.abs(th - it.height) < 2) return false;
+    it.width = tw; it.height = th; it.resize = true;
+    return true;
+}
+
+// A resized window has settled: if its app did not take the size it was
+// given, it may reach past the screen edge. Bring it back in.
+function fitResized(now) {
+    fitLater.forEach(function (e, id) {
+        if (now - e.at < FIT_AFTER_MS) return;
+        fitLater.delete(id);
+        const w = e.w;
+        if (w.deleted || w.minimized || w.fullScreen || whyNot(w) !== "") return;
+        const ds = w.desktops || [];
+        let area;
+        try { area = usableArea(w, w.output, ds.length ? ds[0] : workspace.currentDesktop); } catch (err) { return; }
+        const g = w.frameGeometry;
+        if (g.width > area.width || g.height > area.height) return;
+        const pos = clampInto(g.x, g.y, g.width, g.height, area);
+        if (Math.abs(pos.x - g.x) >= 1 || Math.abs(pos.y - g.y) >= 1) {
+            log("'" + w.caption + "' did not take its new size; moved back on screen");
+            moveTo(w, pos.x, pos.y, true);
+        }
+    });
+}
+
 // ---------------------------------------------------------- new windows
 
-const placeNew = guard("placeNew", function (w) {
+// size: optional { width, height } to give the window as it is placed.
+const placeNew = guard("placeNew", function (w, size) {
     loadConfig();
     const reason = whyNot(w);
     if (reason) { log("skip '" + w.caption + "': " + reason); return; }
@@ -1478,10 +1764,13 @@ const placeNew = guard("placeNew", function (w) {
     const ds = w.desktops || [];
     const desktop = ds.length ? ds[0] : workspace.currentDesktop;
     const area = usableArea(w, output, desktop);
-    if (fillsArea(w, area)) { log("skip '" + w.caption + "': fills area"); return; }
     trackMaximize(w);
-    const mr = maximizedReason(w, output, desktop, area);
-    if (mr) { log("skip '" + w.caption + "': " + mr); return; }
+    let mob = { reason: "", lock: null };
+    if (!size) {
+        if (fillsArea(w, area)) { log("skip '" + w.caption + "': fills area"); return; }
+        mob = mobility(w, output, desktop, area);
+        if (mob.reason) { log("skip '" + w.caption + "': " + mob.reason); return; }
+    }
 
     const now = Date.now();
     sampleWear(now, true);
@@ -1498,28 +1787,76 @@ const placeNew = guard("placeNew", function (w) {
     const items = others.map(function (o) { return itemFor(o, z.get(wid(o)) || 0, usage, false); });
 
     const g = w.frameGeometry;
-    const it = { w: w, x: g.x, y: g.y, width: g.width, height: g.height,
-                 z: TOP_Z, weight: CFG.baseOverlapCost, movable: true };
+    const it = { w: w, x: g.x, y: g.y, width: size ? size.width : g.width, height: size ? size.height : g.height,
+                 z: TOP_Z, weight: CFG.baseOverlapCost, movable: true,
+                 lock: mob.lock, fixX: g.x, fixY: g.y };
     const spot = placeOne(it, items, area, wm);
     log("place '" + w.caption + "' at " + spot.x + "," + spot.y +
         " (hides " + Math.round(spot.hidden) + " weighted px, wear cost " + Math.round(spot.wear) +
-        (spot.edge ? ", edge-aligned" : "") + ")");
-    moveTo(w, spot.x, spot.y);
+        (spot.edge ? ", edge-aligned" : "") +
+        (mob.lock ? ", full " + (mob.lock === "y" ? "height: moved sideways only" : "width: moved up/down only") : "") + ")");
+    moveTo(w, spot.x, spot.y, false, size);
     sampleWear(Date.now(), true);
+});
+
+// A window of one of the fitClasses opened: give it fitPercent % of the
+// screen, once, and place it. Meant for a window you would otherwise run
+// fullscreen all day (a remote desktop): a little smaller than the screen it
+// can be moved, so whatever is static inside it no longer sits on the same
+// pixels. It is taken out of fullscreen or maximized first if need be.
+function isFitClass(w) {
+    return CFG.fitClasses.length > 0 && CFG.fitClasses.indexOf(String(w.resourceClass || "").toLowerCase()) !== -1;
+}
+const fitNew = guard("fitNew", function (w) {
+    loadConfig();
+    try { if (w.fullScreen) w.fullScreen = false; } catch (e) { /* not ours to change */ }
+    try { w.setMaximize(false, false); } catch (e) { /* n/a */ }
+    const reason = whyNot(w);
+    if (reason) {
+        say("'" + w.caption + "' (" + appKey(w) + ") is in fitClasses but can't be sized: " + reason +
+            (w.fullScreen ? "; set the app to open in a window instead of fullscreen" : ""));
+        return;
+    }
+    const ds = w.desktops || [];
+    const area = usableArea(w, w.output, ds.length ? ds[0] : workspace.currentDesktop);
+    const f = CFG.fitPercent / 100;
+    let width = Math.round(area.width * f), height = Math.round(area.height * f);
+    try {
+        if (w.minSize) { width = Math.max(width, +w.minSize.width || 0); height = Math.max(height, +w.minSize.height || 0); }
+        if (w.maxSize && +w.maxSize.width > 0 && +w.maxSize.height > 0) {
+            width = Math.min(width, +w.maxSize.width); height = Math.min(height, +w.maxSize.height);
+        }
+    } catch (e) { /* n/a */ }
+    width = Math.min(width, area.width); height = Math.min(height, area.height);
+    fitted.add(wid(w));
+    say("'" + w.caption + "' (" + appKey(w) + ") sized to " + width + "x" + height + " (" + CFG.fitPercent + "% of the screen)");
+    placeNew(w, { width: width, height: height });
 });
 
 // ---------------------------------------------------------- notifications
 //
 // Plasma shows notification popups at one of six anchor positions, stacked
 // from there. Each burst of popups (from the first one appearing until the
-// last one closes) is shifted by one random offset, pointing into the screen
-// from the anchor's sides, so the whole stack moves together and keeps its
-// layout. Plasma repositions popups as others arrive, close or expand; the
-// same offset is then applied to the new position. If Plasma keeps putting a
-// popup back, the script gives up on that popup instead of fighting.
+// last one closes) is moved by one random offset, so the whole stack moves
+// together and keeps its layout.
+//
+// One setting, notificationSpread, says how far a burst may land from where
+// Plasma put it: that share of the way to each screen edge. The first popup
+// of a burst lands uniformly inside that box, so 15 keeps popups near
+// Plasma's position (a corner anchor has no room behind it, which makes the
+// box point into the screen), and 100 makes the box the whole screen: popups
+// then appear anywhere, every position equally likely.
+//
+// "home" is where Plasma wants a popup; the script shows it at home + offset.
+// Plasma repositions popups as others arrive, close or expand; that gives a
+// new home and the same offset is applied again. When a growing stack would
+// run off the screen, the offset is pulled back just enough for all of it to
+// fit and the whole burst moves. If Plasma keeps putting a popup back, the
+// script gives up on that popup instead of fighting.
 
-const notifs = new Map();        // window id -> { w, target, fixes, since, gaveUp }
+const notifs = new Map();        // window id -> { w, home, target, fixes, since, gaveUp }
 let notifOffset = null;          // { dx, dy } for the current burst
+let notifMoving = false;         // inside our own move
 let warnedNotifFight = false;
 let warnedNotifMove = false;
 const NOTIF_MAX_FIXES = 6;       // re-applications per popup within NOTIF_FIX_WINDOW_MS
@@ -1529,31 +1866,68 @@ function isNotification(w) {
     return !!(w && (w.notification || w.criticalNotification));
 }
 
-// A random offset for a popup at g on a screen with usable area a: towards
-// the interior along each axis (both ways for a centred anchor).
-function newNotifOffset(g, a) {
-    const f = CFG.notificationSpread / 100;
-    const pick = function (pos, size, start, extent) {
-        const span = f * extent;
-        const c = (pos + size / 2 - start) / extent;        // 0 = start edge, 1 = end edge
-        if (c < 1 / 3) return Math.random() * span;
-        if (c > 2 / 3) return -Math.random() * span;
-        return (Math.random() * 2 - 1) * span;
-    };
-    return { dx: Math.round(pick(g.x, g.width, a.x, a.width)),
-             dy: Math.round(pick(g.y, g.height, a.y, a.height)) };
+// The window you are working in, if a popup on output `output` could cover it.
+function focusedRect(output) {
+    const w = workspace.activeWindow;
+    if (!w || w.deleted || w.minimized || !w.normalWindow || isNotification(w)) return null;
+    if (output && w.output && w.output !== output) return null;
+    const g = plainRect(w.frameGeometry);
+    return saneSize(g.width, g.height) ? g : null;
 }
 
-function shiftNotification(n) {
+// A random offset for a burst whose first popup Plasma put at g, on a screen
+// with usable area a: uniform over the box that reaches notificationSpread %
+// of the way from g to each edge of a. Spots where the popup would cover
+// part of the window you are working in are drawn again, a limited number
+// of times; if none is clear (a very large window, a narrow box) the last
+// draw stands, so the choice is plainly random and never crowds an edge.
+const NOTIF_TRIES = 20;
+function newNotifOffset(g, a, avoid) {
+    const f = CFG.notificationSpread / 100;
+    const one = function (pos, size, start, extent) {
+        const before = Math.max(0, pos - start);                    // room towards the start edge
+        const after = Math.max(0, start + extent - size - pos);     // room towards the end edge
+        return f * (Math.random() * (before + after) - before);
+    };
+    let o = null;
+    for (let t = 0; t < NOTIF_TRIES; t++) {
+        o = { dx: one(g.x, g.width, a.x, a.width), dy: one(g.y, g.height, a.y, a.height) };
+        // A burst shifted straight up or down by exactly the distance between
+        // two popups would put one popup where Plasma places the next, and
+        // the two could no longer be told apart: never stay in the column.
+        if (Math.abs(o.dx) < 2 && Math.abs(o.dy) >= 2 && f * (a.width - g.width) >= 8) continue;
+        if (!avoid || !intersects({ x: g.x + o.dx, y: g.y + o.dy, width: g.width, height: g.height }, avoid)) break;
+    }
+    return o;
+}
+
+// Pull the burst's offset back so every popup of the stack stays inside a.
+// Returns true if the offset changed (then every popup has to move).
+function fitNotifOffset(a) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    notifs.forEach(function (n) {
+        if (!n.home || n.gaveUp || n.w.deleted) return;
+        x0 = Math.min(x0, n.home.x); x1 = Math.max(x1, n.home.x + n.home.width);
+        y0 = Math.min(y0, n.home.y); y1 = Math.max(y1, n.home.y + n.home.height);
+    });
+    if (x0 === Infinity) return false;
+    // (a stack larger than the screen is lined up with its start edge)
+    const dx = clamp(notifOffset.dx, a.x - x0, a.x + a.width - x1);
+    const dy = clamp(notifOffset.dy, a.y - y0, a.y + a.height - y1);
+    const changed = Math.abs(dx - notifOffset.dx) >= 0.5 || Math.abs(dy - notifOffset.dy) >= 0.5;
+    notifOffset = { dx: dx, dy: dy };
+    return changed;
+}
+
+// Show popup n at its home + the burst's offset.
+function applyNotifOffset(n, a) {
     const w = n.w;
-    if (w.deleted || n.gaveUp) return;
+    if (!n.home || n.gaveUp || w.deleted) return;
     const g = w.frameGeometry;
-    let a;
-    try { a = clientAreaFor(w.output, workspace.currentDesktop, w); } catch (e) { return; }
-    if (!notifOffset) notifOffset = newNotifOffset(g, a);
-    const x = Math.round(Math.max(a.x, Math.min(a.x + a.width - g.width, g.x + notifOffset.dx)));
-    const y = Math.round(Math.max(a.y, Math.min(a.y + a.height - g.height, g.y + notifOffset.dy)));
-    if (Math.abs(x - g.x) < 1 && Math.abs(y - g.y) < 1) { n.target = { x: g.x, y: g.y }; return; }
+    const width = g.width, height = g.height;
+    const pos = clampInto(n.home.x + notifOffset.dx, n.home.y + notifOffset.dy, width, height, a);
+    n.target = pos;
+    if (Math.abs(pos.x - g.x) < 1 && Math.abs(pos.y - g.y) < 1) return;
     const now = Date.now();
     if (now - n.since > NOTIF_FIX_WINDOW_MS) { n.since = now; n.fixes = 0; }
     if (++n.fixes > NOTIF_MAX_FIXES) {
@@ -1564,32 +1938,56 @@ function shiftNotification(n) {
         }
         return;
     }
-    n.target = { x: x, y: y };
-    w.frameGeometry = { x: x, y: y, width: g.width, height: g.height };
-    if (!applied(w, x, y)) {
+    const fromX = g.x, fromY = g.y;
+    notifMoving = true;
+    let sent = false;
+    try { sent = setFrame(w, pos.x, pos.y, width, height); } finally { notifMoving = false; }
+    if (!sent) { n.gaveUp = true; return; }
+    if (!applied(w, pos.x, pos.y)) {
         if (!warnedNotifMove) {
             warnedNotifMove = true;
-            say("KWin did not move a notification popup; notification shifting has no effect here");
+            say("KWin did not move a notification popup; notification placement has no effect here");
         }
         return;
     }
-    log("notification shifted by " + (x - g.x) + "," + (y - g.y) + " to " + x + "," + y);
+    log("notification moved by " + (pos.x - fromX) + "," + (pos.y - fromY) + " to " + pos.x + "," + pos.y);
+}
+
+// Popup n appeared, or its geometry changed.
+function placeNotification(n) {
+    const w = n.w;
+    if (w.deleted || n.gaveUp || CFG.notificationSpread <= 0) return;
+    const g = plainRect(w.frameGeometry);
+    if (!saneSize(g.width, g.height)) return;
+    let a = null;
+    try { a = clientAreaFor(w.output, workspace.currentDesktop, w); } catch (e) { a = null; }
+    if (!goodRect(a)) return;
+    if (n.target && Math.abs(g.x - n.target.x) < 1 && Math.abs(g.y - n.target.y) < 1) {
+        // still where we put it: at most its size changed
+        n.home = { x: n.home.x, y: n.home.y, width: g.width, height: g.height };
+    } else {
+        n.home = g;                                 // Plasma put it here
+    }
+    if (!notifOffset) notifOffset = newNotifOffset(g, a, focusedRect(w.output));
+    if (fitNotifOffset(a)) {
+        notifs.forEach(function (o) { applyNotifOffset(o, a); });
+    } else {
+        applyNotifOffset(n, a);
+    }
 }
 
 function trackNotification(w) {
     if (CFG.notificationSpread <= 0) return;
     if (notifs.size === 0) notifOffset = null;     // a new burst
-    const n = { w: w, target: null, fixes: 0, since: Date.now(), gaveUp: false };
+    const n = { w: w, home: null, target: null, fixes: 0, since: Date.now(), gaveUp: false };
     notifs.set(wid(w), n);
-    // Plasma moved it (restacking, expanding): apply the offset to its new spot.
-    // Our own move lands on n.target and is ignored; a size change alone too.
+    // Plasma moved or resized it (restacking, expanding): apply the offset to
+    // its new home. Our own moves are ignored.
     w.frameGeometryChanged.connect(guard("notification", function () {
-        if (!notifs.has(wid(w)) || !n.target) return;
-        const g = w.frameGeometry;
-        if (Math.abs(g.x - n.target.x) < 1 && Math.abs(g.y - n.target.y) < 1) return;
-        shiftNotification(n);
+        if (notifMoving || !notifs.has(wid(w)) || !n.home) return;
+        placeNotification(n);
     }));
-    whenSized(w, function () { shiftNotification(n); });
+    whenSized(w, function () { placeNotification(n); });
 }
 
 // Some windows report a 0x0 size at windowAdded; wait until they have one.
@@ -1646,9 +2044,11 @@ const reshuffle = guard("reshuffle", function (why) {
             // dialogs aren't laid out on their own: they follow their parent below
             if (CFG.keepDialogsWithParent && isChild(w)) return;
             trackMaximize(w);
-            const reason = whyNot(w) || maximizedReason(w, output, desktop, area);
-            if (reason) log("reshuffle keeps '" + w.caption + "' fixed: " + reason);
-            items.push(itemFor(w, z.get(wid(w)) || 0, usage, reason === ""));
+            const why = whyNot(w);
+            const mob = why ? { reason: why, lock: null } : mobility(w, output, desktop, area);
+            if (mob.reason) log("reshuffle keeps '" + w.caption + "' fixed: " + mob.reason);
+            else if (mob.lock) log("reshuffle moves '" + w.caption + "' " + (mob.lock === "y" ? "sideways" : "up/down") + " only: it spans the screen");
+            items.push(itemFor(w, z.get(wid(w)) || 0, usage, mob.reason === "", mob.lock));
         });
         const movable = items.filter(function (it) { return it.movable; });
         if (movable.length === 0) {
@@ -1658,12 +2058,15 @@ const reshuffle = guard("reshuffle", function (why) {
 
         const hiddenBefore = exactCost(items, false);
         const wearBefore = meanWearUnder(movable, wm);
+        let resized = 0;
+        movable.forEach(function (it) { if (planSize(it, area)) resized++; });
         const r = optimizeLayout(items, area, wm, deadline);
         const moved = new Map();
         movable.forEach(function (it) {
             const g = it.w.frameGeometry;
             const dx = it.x - g.x, dy = it.y - g.y;
-            if (moveTo(it.w, it.x, it.y) && (dx || dy)) moved.set(wid(it.w), { dx: dx, dy: dy });
+            const size = it.resize ? { width: it.width, height: it.height } : null;
+            if (moveTo(it.w, it.x, it.y, false, size) && (dx || dy)) moved.set(wid(it.w), { dx: dx, dy: dy });
         });
         const nd = moveDialogsWith(moved, area);
         if (nd) log("moved " + nd + " dialog(s) along with their parent");
@@ -1671,6 +2074,7 @@ const reshuffle = guard("reshuffle", function (why) {
         say("reshuffled " + movable.length + " of " + visible.length +
             " window(s) on output " + output.name +
             " (desktop '" + (desktop && desktop.name) + "')" +
+            (resized ? ", resized " + resized : "") +
             ": hidden " + Math.round(hiddenBefore) + " -> " + Math.round(exactCost(items, false)) + " px" +
             (wm ? ", border wear " + wearBefore.toFixed(2) + " -> " + meanWearUnder(movable, wm).toFixed(2) +
                   " (1 = average, map hotspot " + wearHotspot(wm).toFixed(1) + "x)" : "") +
@@ -1684,7 +2088,8 @@ const reshuffle = guard("reshuffle", function (why) {
 //
 // Saved format:
 //   { v: 1, saved: <epoch ms>,
-//     apps: { <key>: { ms, last } },
+//     apps: { <key>: { ms, last, sz, pos } }, sz: [width, height], the app's usual window size (optional)
+//                                             pos: seconds its windows' centres spent in each field of a 12 x 6 grid (optional)
 //     wear: { <output name>: { cell, gw, gh, w, h, t, u, d } } }
 // Safety rules:
 //  - nothing is saved until the stored data has been loaded and merged, so a
@@ -1709,12 +2114,16 @@ function hasWear(m) {
 
 function snapshot(now) {
     const list = [];
-    apps.forEach(function (a, k) { list.push({ k: k, ms: decayed(a, now), last: a.last }); });
+    apps.forEach(function (a, k) { list.push({ k: k, ms: decayed(a, now), last: a.last, sz: a.sz, pos: a.pos }); });
     list.sort(function (a, b) { return b.ms - a.ms; });
     const out = {};
     list.filter(function (e) { return e.ms >= 60000; })   // drop < 1 min of use
         .slice(0, CFG.maxApps)
-        .forEach(function (e) { out[e.k] = { ms: Math.round(e.ms), last: e.last }; });
+        .forEach(function (e) {
+            out[e.k] = { ms: Math.round(e.ms), last: e.last };
+            if (e.sz) out[e.k].sz = e.sz;
+            if (e.pos) out[e.k].pos = e.pos.map(function (v) { return Math.round(v); });
+        });
 
     // Wear maps: this session's and those of screens not seen this session
     // (e.g. a monitor unplugged); empty ones are skipped and, beyond the
@@ -1754,13 +2163,18 @@ function mergeStore(text, now) {
         if (!e || !isFinite(e.ms) || e.ms < 0) return;
         const stored = { ms: Number(e.ms), ts: savedAt, last: isFinite(e.last) ? Number(e.last) : 0 };
         const v = decayed(stored, now);
+        const sz = (e.sz && e.sz.length === 2 && saneSize(+e.sz[0], +e.sz[1])) ? [+e.sz[0], +e.sz[1]] : null;
         const a = apps.get(k);
+        if (a && sz && !a.sz) a.sz = sz;
+        const pos = validSeats(e.pos) ? e.pos.map(Number) : null;
+        if (a && pos) { if (a.pos) { for (let i = 0; i < pos.length; i++) a.pos[i] += pos[i]; } else a.pos = pos; }
         if (a) {
             a.ms = decayed(a, now) + v;
             a.ts = now;
             a.last = Math.max(a.last, stored.last);
         } else {
-            apps.set(k, { ms: v, ts: now, last: stored.last });
+            apps.set(k, { ms: v, ts: now, last: stored.last, sz: sz });
+            if (pos) apps.get(k).pos = pos;
         }
         n++;
     });
@@ -1872,6 +2286,7 @@ function onTick() {
     credit(now);
     if (!storeLoaded) tryLoad(now);
     else maybeSave(now, false);
+    fitResized(now);
     requestIdle();
     autoActions(now);
     requestTick(now);
@@ -1932,10 +2347,28 @@ function busyScreen() {
     });
 }
 
+// Windows that have a menu, popup, tooltip or dialog open right now. While
+// you are working these are not drifted: some apps close a dropdown when
+// their window moves.
+function windowsWithPopups() {
+    const busy = new Set();
+    allWindows().forEach(function (c) {
+        if (c.deleted || c.minimized) return;
+        const popup = c.popupWindow || c.popupMenu || c.dropdownMenu || c.tooltip || c.comboBox || c.menu;
+        if (!popup && !isChild(c)) return;
+        const p = topParent(c) || (popup ? workspace.activeWindow : null);
+        if (p) busy.add(wid(p));
+    });
+    return busy;
+}
+
 // Move every movable window a few pixels along its own direction, turning
 // gently; bounce off the screen edges; never into new overlap.
-const driftStep = guard("drift", function () {
+// px: pixels per step. active: you are using the computer right now.
+const driftStep = guard("drift", function (px, active) {
     loadConfig();
+    px = px > 0 ? px : CFG.driftPx;
+    const busy = active ? windowsWithPopups() : null;
     const desktop = workspace.currentDesktop, activity = workspace.currentActivity;
     const z = stackIndex();
     const none = new Map();
@@ -1948,19 +2381,20 @@ const driftStep = guard("drift", function () {
             if (fillsArea(w, area)) return;
             if (CFG.keepDialogsWithParent && isChild(w)) return;
             trackMaximize(w);
-            const movable = whyNot(w) === "" && maximizedReason(w, output, desktop, area) === "";
-            items.push(itemFor(w, z.get(wid(w)) || 0, none, movable));
+            const mob = whyNot(w) === "" ? mobility(w, output, desktop, area) : { reason: "x", lock: null };
+            items.push(itemFor(w, z.get(wid(w)) || 0, none, mob.reason === "", mob.lock));
         });
         const moved = new Map();
         items.forEach(function (it) {
             if (!it.movable) return;
             const id = wid(it.w);
+            if (busy && busy.has(id)) return;
             let a = driftDir.has(id) ? driftDir.get(id) : Math.random() * 2 * Math.PI;
             const b = bounds(it, area);
-            let nx = Math.round(it.x + Math.cos(a) * CFG.driftPx);
-            let ny = Math.round(it.y + Math.sin(a) * CFG.driftPx);
-            if (nx < b.lx || nx > b.hx) { a = Math.PI - a; nx = Math.round(clamp(it.x + Math.cos(a) * CFG.driftPx, b.lx, b.hx)); }
-            if (ny < b.ly || ny > b.hy) { a = -a; ny = Math.round(clamp(it.y + Math.sin(a) * CFG.driftPx, b.ly, b.hy)); }
+            let nx = Math.round(it.x + Math.cos(a) * px);
+            let ny = Math.round(it.y + Math.sin(a) * px);
+            if (nx < b.lx || nx > b.hx) { a = Math.PI - a; nx = Math.round(clamp(it.x + Math.cos(a) * px, b.lx, b.hx)); }
+            if (ny < b.ly || ny > b.hy) { a = -a; ny = Math.round(clamp(it.y + Math.sin(a) * px, b.ly, b.hy)); }
             if ((nx === it.x && ny === it.y) ||
                 pairCost(it, nx, ny, items) > pairCost(it, it.x, it.y, items) + EPS) {
                 driftDir.set(id, Math.random() * 2 * Math.PI);        // blocked: try another way next time
@@ -1977,22 +2411,25 @@ const driftStep = guard("drift", function () {
         moveDialogsWith(moved, area);
     });
     sampleWear(Date.now(), true);
-    if (total) log("drift: moved " + total + " window(s) by " + CFG.driftPx + " px");
+    if (total) log("drift: moved " + total + " window(s) by " + px + " px");
 });
 
 function autoActions(now) {
     if (!autoWanted() || screenLocked) return;
-    const idle = idleFor(now);
-    if (idle < 0) return;
+    const idle = idleFor(now);          // -1: unknown, which counts as "in use"
     if (CFG.autoReshuffle && idle >= CFG.autoIdleSec &&
         now - lastReshuffleAt >= CFG.autoReshuffleMin * 60000 && !busyScreen()) {
         reshuffle("automatic, idle " + Math.round(idle) + " s");
         lastDriftAt = Date.now();
         return;
     }
-    if (CFG.drift && idle >= CFG.driftIdleSec && now - lastDriftAt >= CFG.driftEverySec * 1000 && !busyScreen()) {
+    if (!CFG.drift || now - lastDriftAt < CFG.driftEverySec * 1000 || busyScreen()) return;
+    if (idle >= CFG.driftIdleSec) {
         lastDriftAt = now;
-        driftStep();
+        driftStep(CFG.driftPx, false);
+    } else if (CFG.driftWhileActive) {
+        lastDriftAt = now;
+        driftStep(CFG.driftActivePx, true);
     }
 }
 
@@ -2023,6 +2460,7 @@ function heartbeat() {
 // ---------------------------------------------------------------- wiring
 
 allWindows().forEach(trackMaximize);
+allWindows().forEach(trackSize);
 workspace.windowActivated.connect(guard("onActivated", onActivated));
 onActivated(workspace.activeWindow);
 
@@ -2031,10 +2469,15 @@ workspace.windowAdded.connect(guard("windowAdded", function (w) {
     loadConfig();
     if (isNotification(w)) { trackNotification(w); return; }
     trackMaximize(w);
+    trackSize(w);
     // A dialog that doesn't name its parent: put it over the window it belongs to.
     // (Dialogs that do name one are placed over it by KWin, and left alone.)
     if (CFG.keepDialogsWithParent && isOrphanDialog(w) && !w.fullScreen) {
         whenSized(w, function () { centerOverParent(w); });
+        return;
+    }
+    if (isFitClass(w) && w.normalWindow && !isChild(w)) {
+        whenSized(w, function () { fitNew(w); });
         return;
     }
     const reason = whyNot(w);
@@ -2054,6 +2497,11 @@ workspace.windowRemoved.connect(guard("windowRemoved", function (w) {
     dialogParent.delete(wid(w));
     maxMode.delete(wid(w));
     delete maxTracked[wid(w)];
+    pinned.delete(wid(w));
+    sizes.delete(wid(w));
+    fitted.delete(wid(w));
+    fitLater.delete(wid(w));
+    delete sizeTracked[wid(w)];
     try { sampleWear(now, true); } catch (e) { say("ERROR in wear sample: " + e); }
     maybeSave(now, false);
 }));

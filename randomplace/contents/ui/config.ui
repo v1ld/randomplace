@@ -112,6 +112,12 @@
          <property name="toolTip"><string>Dialogs move together with their parent window on reshuffle, and dialogs that don't declare a parent (such as portal file dialogs) are centered over the window they belong to.</string></property>
         </widget>
        </item>
+       <item row="8" column="0" colspan="2">
+        <widget class="QCheckBox" name="kcfg_slideFullSpan">
+         <property name="text"><string>Move full-height and full-width windows along their free side</string></property>
+         <property name="toolTip"><string>A window as tall as the screen (maximized vertically, or sized that way by hand) is moved sideways only, and a window as wide as the screen up and down only; its size and its other coordinate stay exactly as they are. When off, such windows are never moved, and their borders stay on the same lines. Fully maximized windows and windows snapped to a half or a quarter are never moved either way.</string></property>
+        </widget>
+       </item>
       </layout>
      </widget>
      <widget class="QWidget" name="tab1">
@@ -169,11 +175,11 @@
        </item>
        <item row="4" column="1">
         <widget class="QSpinBox" name="kcfg_wearHalfLifeDays">
-         <property name="toolTip"><string>How slowly old wear fades from the map.</string></property>
+         <property name="toolTip"><string>How slowly old wear fades from the map. Real panel wear never fades, so the default is 5 years.</string></property>
          <property name="minimum"><number>1</number></property>
          <property name="maximum"><number>3650</number></property>
          <property name="suffix"><string> days</string></property>
-         <property name="value"><number>180</number></property>
+         <property name="value"><number>1825</number></property>
         </widget>
        </item>
        <item row="5" column="0">
@@ -208,17 +214,69 @@
        </item>
        <item row="7" column="0">
         <widget class="QLabel" name="label_notificationSpread">
-         <property name="text"><string>Shift notification popups by up to:</string></property>
+         <property name="text"><string>Scatter notification popups:</string></property>
          <property name="buddy"><cstring>kcfg_notificationSpread</cstring></property>
         </widget>
        </item>
        <item row="7" column="1">
         <widget class="QSpinBox" name="kcfg_notificationSpread">
-         <property name="toolTip"><string>Each burst of notification popups is moved a random distance from the position chosen in Plasma's notification settings, up to this share of the screen width and height, towards the middle of the screen. 0 = leave them where Plasma puts them.</string></property>
+         <property name="toolTip"><string>Each burst of notification popups lands at a random spot. This sets how far from the position chosen in Plasma's notification settings it may land, as a share of the distance to each screen edge. A small value keeps popups near that position; 100 % lets them appear anywhere on the screen, every spot equally likely. Popups that arrive together move together, so their stacking stays intact.</string></property>
+         <property name="specialValueText"><string>Off (where Plasma puts them)</string></property>
          <property name="minimum"><number>0</number></property>
-         <property name="maximum"><number>50</number></property>
+         <property name="maximum"><number>100</number></property>
          <property name="suffix"><string> %</string></property>
-         <property name="value"><number>15</number></property>
+         <property name="value"><number>100</number></property>
+        </widget>
+       </item>
+       <item row="8" column="1">
+        <widget class="QLabel" name="hint_notificationSpread">
+         <property name="text"><string>0 = off, 15 = near Plasma's position, 100 = anywhere on the screen</string></property>
+         <property name="wordWrap"><bool>true</bool></property>
+        </widget>
+       </item>
+       <item row="9" column="0">
+        <widget class="QLabel" name="label_sizeVariation">
+         <property name="text"><string>Vary window sizes on reshuffle:</string></property>
+         <property name="buddy"><cstring>kcfg_sizeVariation</cstring></property>
+        </widget>
+       </item>
+       <item row="9" column="1">
+        <widget class="QSpinBox" name="kcfg_sizeVariation">
+         <property name="toolTip"><string>A window can only move by the room its size leaves, so tall windows always wear a band along the top and bottom of the screen, and wide ones along the sides. With this on, each reshuffle makes every freely movable window up to this much smaller than the size you gave it, a new random amount each time and separately for width and height. Never larger. Resizing a window by hand sets its size from then on. New windows are not resized when they open.</string></property>
+         <property name="specialValueText"><string>Off (never resize)</string></property>
+         <property name="minimum"><number>0</number></property>
+         <property name="maximum"><number>25</number></property>
+         <property name="prefix"><string>up to </string></property>
+         <property name="suffix"><string> % smaller</string></property>
+         <property name="value"><number>25</number></property>
+        </widget>
+       </item>
+       <item row="10" column="0">
+        <widget class="QLabel" name="label_fitClasses">
+         <property name="text"><string>Near-fullscreen window classes:</string></property>
+         <property name="buddy"><cstring>kcfg_fitClasses</cstring></property>
+        </widget>
+       </item>
+       <item row="10" column="1">
+        <widget class="QLineEdit" name="kcfg_fitClasses">
+         <property name="text"><string>wfica</string></property>
+         <property name="toolTip"><string>Comma-separated window classes, for windows you would otherwise keep fullscreen all day (a remote desktop, for example). When such a window opens it is taken out of fullscreen or maximized, given the share of the screen set below, once, and placed at random. After that it is moved like any other window but never resized by the script, so whatever is static inside it no longer sits on the same pixels.</string></property>
+         <property name="placeholderText"><string>none</string></property>
+        </widget>
+       </item>
+       <item row="11" column="0">
+        <widget class="QLabel" name="label_fitPercent">
+         <property name="text"><string>Size given to those windows:</string></property>
+         <property name="buddy"><cstring>kcfg_fitPercent</cstring></property>
+        </widget>
+       </item>
+       <item row="11" column="1">
+        <widget class="QSpinBox" name="kcfg_fitPercent">
+         <property name="toolTip"><string>Share of the screen's width and height. 90 % leaves a tenth of the screen to move within in each direction.</string></property>
+         <property name="minimum"><number>30</number></property>
+         <property name="maximum"><number>100</number></property>
+         <property name="suffix"><string> % of the screen, each way</string></property>
+         <property name="value"><number>90</number></property>
         </widget>
        </item>
       </layout>
@@ -339,7 +397,7 @@
        <property name="fieldGrowthPolicy"><enum>QFormLayout::ExpandingFieldsGrow</enum></property>
        <item row="0" column="0" colspan="2">
         <widget class="QLabel" name="intro3">
-         <property name="text"><string>Burn-in comes from the same content staying in the same place for hours. These keep the layout changing without getting in your way: nothing moves while you are using the computer, while a video plays, while a window is fullscreen, or while the screen is locked. Idle time comes from the helper (Wayland idle notification); without it these stay off.</string></property>
+         <property name="text"><string>Burn-in comes from the same content staying in the same place for hours. These keep the layout changing without getting in your way: windows never jump while you are using the computer or while a video plays (at most they drift by a pixel), and nothing moves while a window is fullscreen or the screen is locked. Idle time comes from the helper (Wayland idle notification); without it these stay off.</string></property>
          <property name="wordWrap"><bool>true</bool></property>
         </widget>
        </item>
@@ -434,6 +492,27 @@
          <property name="maximum"><number>3600</number></property>
          <property name="suffix"><string> s</string></property>
          <property name="value"><number>20</number></property>
+        </widget>
+       </item>
+       <item row="9" column="0" colspan="2">
+        <widget class="QCheckBox" name="kcfg_driftWhileActive">
+         <property name="text"><string>Also drift while I'm using the computer</string></property>
+         <property name="toolTip"><string>Reshuffles wait until you are idle, so during hours of uninterrupted work nothing moves. With this on, windows also drift while you work, by the step set below. A window with a menu, popup or dialog open is skipped, as is everything while a window is fullscreen or being dragged.</string></property>
+        </widget>
+       </item>
+       <item row="10" column="0">
+        <widget class="QLabel" name="label_driftActivePx">
+         <property name="text"><string>Step while I'm using the computer:</string></property>
+         <property name="buddy"><cstring>kcfg_driftActivePx</cstring></property>
+        </widget>
+       </item>
+       <item row="10" column="1">
+        <widget class="QSpinBox" name="kcfg_driftActivePx">
+         <property name="toolTip"><string>Pixels each window moves per drift step while you are working. The default is the same as the idle step; lower it to 1 if you ever notice windows moving while you work.</string></property>
+         <property name="minimum"><number>1</number></property>
+         <property name="maximum"><number>50</number></property>
+         <property name="suffix"><string> px</string></property>
+         <property name="value"><number>2</number></property>
         </widget>
        </item>
       </layout>
