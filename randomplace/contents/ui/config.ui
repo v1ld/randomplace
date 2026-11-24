@@ -235,42 +235,59 @@
         </widget>
        </item>
        <item row="9" column="0">
-        <widget class="QLabel" name="label_sizeVariation">
-         <property name="text"><string>Vary window sizes on reshuffle:</string></property>
-         <property name="buddy"><cstring>kcfg_sizeVariation</cstring></property>
+        <widget class="QLabel" name="label_heightVariation">
+         <property name="text"><string>Vary window heights on reshuffle:</string></property>
+         <property name="buddy"><cstring>kcfg_heightVariation</cstring></property>
         </widget>
        </item>
        <item row="9" column="1">
-        <widget class="QSpinBox" name="kcfg_sizeVariation">
-         <property name="toolTip"><string>A window can only move by the room its size leaves, so tall windows always wear a band along the top and bottom of the screen, and wide ones along the sides. With this on, each reshuffle makes every freely movable window up to this much smaller than the size you gave it, a new random amount each time and separately for width and height. Never larger. Resizing a window by hand sets its size from then on. New windows are not resized when they open.</string></property>
-         <property name="specialValueText"><string>Off (never resize)</string></property>
+        <widget class="QSpinBox" name="kcfg_heightVariation">
+         <property name="toolTip"><string>A window can only move by the room its size leaves, so tall windows always wear a band along the top and bottom of the screen. With this on, each reshuffle makes every freely movable window up to this much lower than the height you gave it, a new random amount each time. Never higher, and never lower than half the screen: windows already that low keep their height, because their edges can reach every row as they are. Resizing a window by hand sets its size from then on. New windows are not resized when they open.</string></property>
+         <property name="specialValueText"><string>Off (keep the height)</string></property>
          <property name="minimum"><number>0</number></property>
          <property name="maximum"><number>25</number></property>
          <property name="prefix"><string>up to </string></property>
-         <property name="suffix"><string> % smaller</string></property>
+         <property name="suffix"><string> % lower</string></property>
          <property name="value"><number>25</number></property>
         </widget>
        </item>
        <item row="10" column="0">
+        <widget class="QLabel" name="label_widthVariation">
+         <property name="text"><string>Vary window widths on reshuffle:</string></property>
+         <property name="buddy"><cstring>kcfg_widthVariation</cstring></property>
+        </widget>
+       </item>
+       <item row="10" column="1">
+        <widget class="QSpinBox" name="kcfg_widthVariation">
+         <property name="toolTip"><string>The same for the width, drawn separately. Off by default: a narrower window reflows what it shows, and there is usually plenty of sideways room already, so it adds little. Worth turning on if your windows are nearly as wide as the screen.</string></property>
+         <property name="specialValueText"><string>Off (keep the width)</string></property>
+         <property name="minimum"><number>0</number></property>
+         <property name="maximum"><number>25</number></property>
+         <property name="prefix"><string>up to </string></property>
+         <property name="suffix"><string> % narrower</string></property>
+         <property name="value"><number>0</number></property>
+        </widget>
+       </item>
+       <item row="11" column="0">
         <widget class="QLabel" name="label_fitClasses">
          <property name="text"><string>Near-fullscreen window classes:</string></property>
          <property name="buddy"><cstring>kcfg_fitClasses</cstring></property>
         </widget>
        </item>
-       <item row="10" column="1">
+       <item row="11" column="1">
         <widget class="QLineEdit" name="kcfg_fitClasses">
          <property name="text"><string></string></property>
-         <property name="toolTip"><string>Comma-separated window classes, for windows you would otherwise keep fullscreen all day (a remote desktop, for example). When such a window opens it is taken out of fullscreen or maximized, given the share of the screen set below, once, and placed at random. After that it is moved like any other window but never resized by the script, so whatever is static inside it no longer sits on the same pixels.</string></property>
+         <property name="toolTip"><string>Comma-separated window classes, for windows you would otherwise keep fullscreen all day (a remote desktop, for example). Such a window is given the share of the screen set below and placed at random, when it opens as a plain window or, if it opens fullscreen, each time the app itself leaves fullscreen. After that it is moved like any other window but not resized by the script, so whatever is static inside it no longer sits on the same pixels.</string></property>
          <property name="placeholderText"><string>none</string></property>
         </widget>
        </item>
-       <item row="11" column="0">
+       <item row="12" column="0">
         <widget class="QLabel" name="label_fitPercent">
          <property name="text"><string>Size given to those windows:</string></property>
          <property name="buddy"><cstring>kcfg_fitPercent</cstring></property>
         </widget>
        </item>
-       <item row="11" column="1">
+       <item row="12" column="1">
         <widget class="QSpinBox" name="kcfg_fitPercent">
          <property name="toolTip"><string>Share of the screen's width and height. 90 % leaves a tenth of the screen to move within in each direction.</string></property>
          <property name="minimum"><number>30</number></property>

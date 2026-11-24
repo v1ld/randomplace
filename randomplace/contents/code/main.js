@@ -87,9 +87,13 @@ function readSettings() { return {
     // A window as tall (or as wide) as the screen can still move sideways
     // (or up and down): move it along that free side instead of pinning it.
     slideFullSpan: bool("slideFullSpan", true),
-    // On a reshuffle, make each window up to this many % smaller than the
-    // size you gave it, a new random amount each time. 0 = never resize.
-    sizeVariation: Math.min(25, Math.max(0, num("sizeVariation", 25))),
+    // On a reshuffle, make each window up to this many % lower / narrower
+    // than the size you gave it, a new random amount each time. 0 = that
+    // side is never changed. Height is what spreads the wear of tall windows
+    // (see "size variation" below); width is off by default because a
+    // narrower window reflows its content and sideways room is rarely short.
+    heightVariation: Math.min(25, Math.max(0, num("heightVariation", 25))),
+    widthVariation: Math.min(25, Math.max(0, num("widthVariation", 0))),
     // Undo size changes an app makes on its own right after being moved.
     keepSizeOnMove: bool("keepSizeOnMove", true),
     // Automatic reshuffle: every autoReshuffleMin minutes, but only once you
@@ -1618,10 +1622,12 @@ function meanWearUnder(list, wm) {
 // tall on an 1800 px screen can put its title bar only in the top 340 px,
 // wherever it is placed, so tall windows wear a band along the top and one
 // along the bottom however well positions are spread (and wide windows the
-// same at the sides). Only a different size changes that. With
-// sizeVariation > 0, each reshuffle gives every freely movable window a size
-// up to that many % smaller than its base size, independently in width and
-// height. Never larger: the base is the size you chose.
+// same at the sides). Only a different size changes that. Each reshuffle
+// gives every freely movable window a height up to heightVariation % and a
+// width up to widthVariation % smaller than its base size, each drawn on its
+// own. Never larger: the base is the size you chose. Never lower than half
+// the screen either, and windows already that low keep their height (see
+// planSize).
 //
 // The base size of a window is the size it had when first seen, and after
 // that whatever you resize it to by hand. Apps often remember the size a
@@ -1658,9 +1664,9 @@ function sizeRecord(w) {
     if (!r) {
         r = { bw: g.width, bh: g.height, sw: null, sh: null, startW: 0, startH: 0 };
         const a = apps.get(appKey(w));
-        const p = CFG.sizeVariation / 100;
-        const fits = function (v, usual) { return v <= usual + sizeTol(usual) && v >= usual * (1 - p) - sizeTol(usual); };
-        if (a && a.sz && p > 0 && fits(g.width, a.sz[0]) && fits(g.height, a.sz[1])) {
+        const pw = CFG.widthVariation / 100, ph = CFG.heightVariation / 100;
+        const fits = function (v, usual, p) { return v <= usual + sizeTol(usual) && v >= usual * (1 - p) - sizeTol(usual); };
+        if (a && a.sz && (pw > 0 || ph > 0) && fits(g.width, a.sz[0], pw) && fits(g.height, a.sz[1], ph)) {
             r.bw = a.sz[0]; r.bh = a.sz[1];
             if (Math.abs(r.bw - g.width) >= 2 || Math.abs(r.bh - g.height) >= 2) {
                 log("'" + w.caption + "' (" + appKey(w) + ") opened at " + Math.round(g.width) + "x" + Math.round(g.height) +
@@ -1712,20 +1718,28 @@ function trackSize(w) {
 // is to be resized (then it.width / it.height hold the new size).
 function planSize(it, area) {
     const w = it.w, id = wid(w);
-    const p = CFG.sizeVariation / 100;
+    const pw = CFG.widthVariation / 100, ph = CFG.heightVariation / 100;
+    const on = pw > 0 || ph > 0;
     const known = sizes.get(id);
     // off: only windows still at a size we gave them need anything (their base back)
-    if (p <= 0 && !(known && known.sw !== null)) return false;
+    if (!on && !(known && known.sw !== null)) return false;
     if (it.lock || w.resizeable === false || fitted.has(id)) return false;
     const r = sizeRecord(w);
     let minW = MIN_VARIED, minH = MIN_VARIED;
     try { if (w.minSize) { minW = Math.max(minW, +w.minSize.width || 0); minH = Math.max(minH, +w.minSize.height || 0); } } catch (e) { /* n/a */ }
-    const pickSize = function (base, min, room) {
+    const pickSize = function (base, min, room, p) {
         const v = p > 0 ? base * (1 - Math.random() * p) : base;
         return Math.round(Math.min(room, base, Math.max(min, v)));
     };
-    const tw = pickSize(r.bw, minW, area.width), th = pickSize(r.bh, minH, area.height);
-    if (p > 0) { r.sw = tw; r.sh = th; } else { r.sw = r.sh = null; }
+    // Height has a floor of half the screen. A window that low can already
+    // put its top and bottom edges on every row, so making it lower gains
+    // nothing: one at or below the floor keeps its height, and a taller one
+    // is never taken below it.
+    const floorH = area.height / 2;
+    const tw = pickSize(r.bw, minW, area.width, pw);
+    const th = r.bh <= floorH ? Math.round(Math.min(area.height, r.bh))
+                              : pickSize(r.bh, Math.max(minH, Math.ceil(floorH)), area.height, ph);
+    if (on) { r.sw = tw; r.sh = th; } else { r.sw = r.sh = null; }
     if (Math.abs(tw - it.width) < 2 && Math.abs(th - it.height) < 2) return false;
     it.width = tw; it.height = th; it.resize = true;
     return true;

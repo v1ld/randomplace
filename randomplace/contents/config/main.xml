@@ -85,9 +85,15 @@
       <max>100</max>
     </entry>
 
-    <entry name="sizeVariation" type="Int">
-      <label>Make windows up to this much smaller on reshuffle (%; 0 = never resize)</label>
+    <entry name="heightVariation" type="Int">
+      <label>Make windows up to this much lower on reshuffle (%; 0 = never change the height)</label>
       <default>25</default>
+      <min>0</min>
+      <max>25</max>
+    </entry>
+    <entry name="widthVariation" type="Int">
+      <label>Make windows up to this much narrower on reshuffle (%; 0 = never change the width)</label>
+      <default>0</default>
       <min>0</min>
       <max>25</max>
     </entry>

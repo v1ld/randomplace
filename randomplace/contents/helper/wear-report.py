@@ -196,7 +196,7 @@ def sharpness(d, gw, gh):
 
 
 SEAT_W, SEAT_H = 12, 6
-MIN_SEAT_HOURS = 2.0
+MIN_SEAT_HOURS = 20.0
 
 
 def own_range(data):
@@ -207,14 +207,20 @@ def own_range(data):
     proportion; 0.33 = it kept to a third of that. The wear map above cannot
     show this, because it does not know which window a border belongs to."""
     rows = []
+    most = 0.0
     for k, e in (data.get("apps") or {}).items():
         p = e.get("pos") if isinstance(e, dict) else None
         if not isinstance(p, list) or len(p) != SEAT_W * SEAT_H:
             continue
         t = float(sum(p))
+        most = max(most, t)
         if t >= MIN_SEAT_HOURS * 3600:
             rows.append((k, t, [v / t for v in p]))
     if not rows:
+        if most > 0:
+            # a window rests in one place per reshuffle, so a few hours is a
+            # handful of places and says nothing yet
+            return ["own range: no app has %g h on screen yet (most: %.1f h)" % (MIN_SEAT_HOURS, most / 3600)]
         return []
     rows.sort(key=lambda r: -r[1])
     n = len(rows)

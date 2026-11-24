@@ -9,7 +9,7 @@ RandomPlace is a KWin script for OLED screens. Window borders and title bars are
 - **Automatic.** Every 45 minutes the layout is reshuffled, but only once you've been idle for 2 minutes, or right after you unlock. Between reshuffles, windows drift a pixel or two at a time, also while you work. Nothing jumps while you work, and nothing moves at all while a window is fullscreen or the screen is locked.
 - **Notification popups move too.** Each burst of notifications lands at a random spot. One setting says how far from the position set in Plasma's notification settings it may land: near it (the default), anywhere on the screen, or anything in between. The popups in a burst move together, so Plasma's stacking stays intact.
 - **Windows that span the screen still move.** A window as tall as the screen is moved sideways, and one as wide as the screen up and down, instead of being pinned.
-- **Sizes vary too.** A window can only move by the room its size leaves. Each reshuffle makes windows a little smaller than the size you gave them, by a new random amount of up to 25% (`sizeVariation`; 0 turns it off), so tall and wide windows stop wearing the same bands.
+- **Sizes vary too.** A window can only move by the room its size leaves. Each reshuffle makes windows a little lower than the height you gave them, by a new random amount of up to 25% (`heightVariation`; 0 turns it off), so tall and wide windows stop wearing the same bands.
 - **A place for the window you'd otherwise keep fullscreen.** A remote desktop or similar is given 90% of the screen when it opens as a window or leaves fullscreen (`fitClasses`, empty by default), so it can be moved like everything else.
 - **Separate layouts.** Each virtual desktop, Activity and screen is handled on its own.
 - **Dialogs stay over their parent.** On a reshuffle, dialogs move together with the window they belong to. Dialogs that don't declare a parent, such as the file Open/Save dialogs drawn by the desktop portal, are centered over the window that opened them.
@@ -66,7 +66,8 @@ Changes apply at the next window placement or reshuffle, with no reload needed.
 | `wearSampleSec` | 5 | How often the on-screen layout is sampled, from 1 to 20 s. |
 | `titleBarHeight` | 32 | Height of the title-bar band counted as wear. |
 | `notificationSpread` | 100 | How far a burst of notification popups may land from the position chosen in Plasma's notification settings, as a percentage of the distance to each screen edge. 0 leaves popups where Plasma puts them, 15 keeps them near that position, and 100 lets them appear anywhere on the screen. See *Notification popups* below. |
-| `sizeVariation` | 25 | On each reshuffle, make every freely movable window up to this many percent smaller than its base size, separately in width and height. 0 never resizes. See *Size variation* below. |
+| `heightVariation` | 25 | On each reshuffle, make every freely movable window up to this many percent lower than its base height, but never lower than half the screen; windows already that low keep their height. 0 never changes the height. See *Size variation* below. |
+| `widthVariation` | 0 | The same for the width, drawn separately. Off by default: a narrower window reflows its content, and sideways room is rarely short. |
 | `fitClasses` | (empty) | Comma-separated window classes that are given `fitPercent` of the screen when they open as a window or leave fullscreen. Empty by default, which turns this off; for a Citrix Workspace session use `wfica`. See *Near-fullscreen windows* below. |
 | `fitPercent` | 90 | The share of the screen's width and height those windows get. |
 | **Usage** | | |
@@ -143,29 +144,35 @@ A window as tall as the screen has nowhere to go vertically, and one as wide as 
 
 **Why.** Position can only do so much. A window 1460 px tall on an 1800 px screen can put its title bar only in the top 340 px and its bottom edge only in the bottom 340 px, wherever it is placed. A month of real use showed exactly those two bands, worn about twice as much as the middle of the screen, and stronger wear avoidance did not remove them (see *What a month of real use showed*). Only a different size does.
 
-**What it does.** Each reshuffle gives every freely movable window a size up to `sizeVariation` percent (25 by default) smaller than its base size, a new random amount each time and separately for width and height. Set it to 0 to never resize windows.
+**What it does.** Each reshuffle gives every freely movable window a height up to `heightVariation` percent (25 by default) lower than its base height, a new random amount each time. `widthVariation` does the same for the width, drawn separately, and is 0 by default. With both at 0, windows are never resized.
+
+**Why height and not width.** The bands come from the top and bottom edges of tall windows, which have little vertical room, so a lower window is what gives those edges new places to be. Sideways there is usually plenty of room already: a 1400 px wide window has about 2900 px of travel on a 4267 px wide screen. A narrower window also reflows what it shows, which is noticed at once, while a lower one just shows a few lines fewer. Turn `widthVariation` on if your windows are nearly as wide as the screen.
 
 - **Never larger.** The base size is the size you chose.
+- **Never lower than half the screen.** A window half the screen high can already put its top and bottom edges on every row, so making it lower gains nothing. A window at or below that height keeps its height, and a taller one is never taken below it. With real window sizes (two tall, two short) leaving the short ones alone made no measurable difference to the wear figures.
 - **Resizing by hand sets the base.** Drag a window's edge and that is its size from then on.
 - **Only on reshuffles.** New windows open at the size their app asks for, and drift never resizes.
 - **Not resized:** windows that span the screen, maximized, snapped and fullscreen windows, dialogs, windows that can't be resized, and the windows of `fitClasses`. A window's minimum size is respected, and no window is made smaller than 320 px.
 - **Apps that remember their size.** Many apps reopen at the size their window was closed at, which would be a size this script gave it. To stop such windows shrinking a little more with every restart, the usual window size of each app is remembered with the usage data. A new window that is at most the variation smaller than its app's usual size takes the usual size as its base. Two windows of the same app that you keep at slightly different sizes will therefore converge on one size; resize one by hand to change the usual size.
 - **Apps that round the size.** A terminal takes a whole number of character cells, and some apps refuse a size. That is accepted as it is. If a window ends up reaching past the screen edge because it didn't shrink, it is moved back on screen a few seconds later.
-- **Turning it off** gives every window its base size back at the next reshuffle.
+- **Turning both off** gives every window its base size back at the next reshuffle.
 
 **How much it helps.** Re-running the script on four windows about 1450 px tall (600 layouts of 45 minutes, `wearWeight` 2):
 
-| `sizeVariation` | Wear variation | Peak / mean | Sharpest 1% of steps |
-|---|---|---|---|
-| 0 | 0.84 | 3.8 | 60% of the mean |
-| 15 | 0.62 | 2.9 | 36% |
-| 25 | 0.52 | 2.5 | 30% |
+| `heightVariation` | `widthVariation` | Wear variation | Peak / mean | Sharpest 1% of steps |
+|---|---|---|---|---|
+| 0 | 0 | 0.84 | 3.7 | 58% of the mean |
+| 15 | 0 | 0.65 | 3.0 | 38% |
+| 25 | 0 | 0.55 | 2.8 | 30% |
+| 25 | 25 | 0.50 | 2.5 | 30% |
+
+Height does most of the work. Width adds a smaller step on top, for windows that are also wide (these were 1250 to 1550 px).
 
 ### Where each app's windows spend their time
 
-The wear map records window borders and can't tell one window from another, so it can't show an app that keeps to one part of the screen, where whatever is static *inside* its windows (a toolbar, a sidebar) would wear only that part. So the script also books, per app, where the centres of its windows sit on a coarse 12 × 6 grid.
+The wear map records window borders only. It says nothing about the inside of windows, and since windows can't hang off the screen, the middle of the screen is lit for more of the time than the map suggests; that wear is broad and smooth, the kind a monitor's own compensation cycle deals with, and the script doesn't try to steer it. The map also can't tell one window from another, so it can't show an app that keeps to one part of the screen, where whatever is static *inside* its windows (a toolbar, a sidebar) would wear only that part. So the script also books, per app, where the centres of its windows sit on a coarse 12 × 6 grid.
 
-`wear-report.py` ends with an *own range* line per app: 1.00 means the app's windows were everywhere the other apps' windows were, 0.33 that they kept to a third of that, followed by its left-to-right share of time as twelve digits. Apps whose windows are much larger or smaller than the rest score lower by nature (about 0.75 in simulation); with fully random reshuffles, like-sized windows score about 0.94.
+`wear-report.py` ends with an *own range* line per app that has at least 20 hours on screen (a window rests in one place per reshuffle, so fewer hours are only a handful of places): 1.00 means the app's windows were everywhere the other apps' windows were, 0.33 that they kept to a third of that, followed by its left-to-right share of time as twelve digits. Apps whose windows are much larger or smaller than the rest score lower by nature (about 0.75 in simulation); with fully random reshuffles, like-sized windows score about 0.94.
 
 ### Near-fullscreen windows
 
@@ -486,6 +493,7 @@ Monitor, brightness, theme and game settings that reduce burn-in risk are covere
 
 ## Version history
 
+- **2.3.0:** size variation is split by direction: `heightVariation` (25) and `widthVariation` (0, new) replace `sizeVariation`, which is no longer read; delete it from `kwinrc` if you had set it. Width is off by default because it added little and narrower windows are a nuisance. Height variation never takes a window below half the screen height and leaves windows at or below that height alone, since below it there is nothing to gain. The *own range* lines of the wear report now need 20 hours per app instead of 2.
 - **2.2.1:** `fitClasses` is now empty by default; set it to `wfica` for a Citrix Workspace session. A `fitClasses` window that opens fullscreen is no longer taken out of fullscreen; it is sized when the app itself leaves fullscreen, every time. The Citrix Workspace connection splash (`wfica_splash`) is in the default `excludeClasses`, so it is no longer placed like an app window.
 - **2.2.0:** notification popups now appear anywhere on the screen by default (`notificationSpread` 100) and keep off the window you're working in. Windows that span the full height or width of the screen are moved along their free side instead of being pinned (`slideFullSpan`). Windows are made up to 25% smaller than the size you gave them on each reshuffle (`sizeVariation`; 0 turns it off), with each app's usual window size remembered so windows don't shrink across restarts. Near-fullscreen sizing for windows you'd otherwise keep fullscreen (`fitClasses`, `fitPercent`). Drift now also runs while you work (`driftWhileActive`, `driftActivePx`). The wear report shows how widely each app's windows range over the screen (*own range*). `wearHalfLifeDays` now defaults to five years, because real wear never fades; if the old value is stored in your `kwinrc`, set the new one yourself.
 - **2.1.0:** notification popups can land anywhere on the screen: `notificationSpread` now runs from 0 to 100 and means "how far from Plasma's position, as a share of the way to each screen edge", so 100 is the whole screen with every position equally likely (settings from 2.0.8 keep working). A stack of popups that would run off the screen is pulled back as a whole instead of its popups piling up at the edge. `wear-report.py` adds a sharpness figure. Every geometry change the script makes now goes through one function that refuses incomplete or insane rectangles. New section on what a month of real wear data showed.
